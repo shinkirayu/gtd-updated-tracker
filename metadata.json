@@ -1,0 +1,6 @@
+{
+  "name": "Kirayu Live Tracker",
+  "description": "A simple, highly polished live stream tracker for virtual accounts classified by PC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
