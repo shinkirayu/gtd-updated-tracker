@@ -5,6 +5,7 @@ export interface GTDUnit {
   Rarity?: string;
   SeedsPrice?: number;
   LimitedStockCount?: number;
+  Type?: 'unit' | 'gamepass' | 'product';
 }
 
 export const gtdUnitsList: GTDUnit[] = [
@@ -424,7 +425,42 @@ export const gtdUnitsList: GTDUnit[] = [
   {"Name":"Gold Lawnmower","ID":"unit_gold_lawnmower","Icon":"91432881400534","Rarity":"ra_exclusive"},
   {"Name":"Diamond Nightshade","ID":"unit_diamond_nightshade_berry","Icon":"140715757320741","Rarity":"ra_exclusive"},
   {"Name":"Masters Banana Peel","ID":"unit_masters_banana_peel","Icon":"94188407305592","Rarity":"ra_exclusive"},
-  {"Name":"Champions Bee Stinger","ID":"unit_champions_beesting","Icon":"114515942517732","Rarity":"ra_exclusive"}
+  {"Name":"Champions Bee Stinger","ID":"unit_champions_beesting","Icon":"114515942517732","Rarity":"ra_exclusive"},
+
+  // ── Gamepasses (gp_) ─────────────────────────────────────────────
+  {"Name":"VIP","ID":"gp_vip","Icon":"","Type":"gamepass"},
+  {"Name":"2x Seeds","ID":"gp_double_seeds","Icon":"","Type":"gamepass"},
+  {"Name":"2x Space Gems","ID":"gp_double_spacegems","Icon":"","Type":"gamepass"},
+  {"Name":"3x Game Speed","ID":"gp_gamespeed_3","Icon":"","Type":"gamepass"},
+  {"Name":"More Storage","ID":"gp_more_storage","Icon":"","Type":"gamepass"},
+  {"Name":"Sandbox Mode","ID":"gp_sandbox","Icon":"","Type":"gamepass"},
+  {"Name":"+1 Equipped Units","ID":"gp_units_equipped_1","Icon":"","Type":"gamepass"},
+  {"Name":"+1 Placed Units","ID":"gp_units_placed_1","Icon":"","Type":"gamepass"},
+  {"Name":"2x Flowers","ID":"gp_double_flowers","Icon":"","Type":"gamepass"},
+  {"Name":"2x Candy Corns","ID":"gp_double_candycorns","Icon":"","Type":"gamepass"},
+  {"Name":"2x Christmas Gifts","ID":"gp_double_christmasgifts","Icon":"","Type":"gamepass"},
+  {"Name":"2x Easter Eggs","ID":"gp_double_eastereggs","Icon":"","Type":"gamepass"},
+
+  // ── Developer Products / Inventory Gamepasses (dp_gd_) ───────────
+  {"Name":"VIP","ID":"dp_gd_vip","Icon":"","Type":"product"},
+  {"Name":"2x Seeds","ID":"dp_gd_double_seeds","Icon":"","Type":"product"},
+  {"Name":"3x Game Speed","ID":"dp_gd_gamespeed_3","Icon":"","Type":"product"},
+  {"Name":"More Storage","ID":"dp_gd_more_storage","Icon":"","Type":"product"},
+  {"Name":"Sandbox Mode","ID":"dp_gd_sandbox","Icon":"","Type":"product"},
+  {"Name":"Extra Loadout","ID":"dp_gd_extra_loadout","Icon":"","Type":"product"},
+  {"Name":"Free Golem","ID":"dp_gd_unit_golem","Icon":"","Type":"product"},
+  {"Name":"+1 Equipped Units","ID":"dp_gd_units_equipped_1","Icon":"","Type":"product"},
+  {"Name":"Seeds Pack 1","ID":"dp_gd_seeds_1","Icon":"","Type":"product"},
+  {"Name":"Seeds Pack 2","ID":"dp_gd_seeds_2","Icon":"","Type":"product"},
+  {"Name":"Seeds Pack 3","ID":"dp_gd_seeds_3","Icon":"","Type":"product"},
+  {"Name":"Seeds Pack 4","ID":"dp_gd_seeds_4","Icon":"","Type":"product"},
+  {"Name":"Seeds Pack 5","ID":"dp_gd_seeds_5","Icon":"","Type":"product"},
+  {"Name":"Seeds Pack 6","ID":"dp_gd_seeds_6","Icon":"","Type":"product"},
+  {"Name":"Seeds Pack 7","ID":"dp_gd_seeds_7","Icon":"","Type":"product"},
+  {"Name":"Seeds Pack 8","ID":"dp_gd_seeds_8","Icon":"","Type":"product"},
+  {"Name":"2x Candy Corns","ID":"dp_gd_double_candycorns","Icon":"","Type":"product"},
+  {"Name":"2x Christmas Gifts","ID":"dp_gd_double_christmasgifts","Icon":"","Type":"product"},
+  {"Name":"2x Easter Eggs","ID":"dp_gd_double_eastereggs","Icon":"","Type":"product"}
 ];
 
 // Helper to sanitize unit ID/Name mapping for GTDCDN lookup

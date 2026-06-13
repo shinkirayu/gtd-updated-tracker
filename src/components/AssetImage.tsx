@@ -29,11 +29,10 @@ export default function AssetImage({
   }
 
   // Sanitize rawName to match GTDCDN filename conventions
-  // The CDN stores unit images as e.g. "unit_tomato_plant.png", lowercase with underscores.
   let cleanId = rawName.toLowerCase().trim().replace(/[-\s]+/g, '_');
 
-  // Prefix with 'unit_' if it doesn't already have it
-  if (!cleanId.startsWith('unit_')) {
+  // CDN hosts unit_, dp_*, and gp_* prefixes — use as-is, only add unit_ for bare names
+  if (!cleanId.startsWith('unit_') && !cleanId.startsWith('dp_') && !cleanId.startsWith('gp_')) {
     cleanId = 'unit_' + cleanId;
   }
 

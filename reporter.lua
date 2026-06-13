@@ -3,9 +3,8 @@
 -- ================================================================
 
 -- ⚙️ CONFIG
-local PC_NAME       = "PC1"
-local SUPABASE_URL  = "https://nnpnqlafladvmtwbrhvi.supabase.co"
-local SUPABASE_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ucG5xbGFmbGFkdm10d2JyaHZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxNTc2MDgsImV4cCI6MjA5NTczMzYwOH0.R5voiwL96l9dURtx18ttW4ghVSwSbGorvL_aTCYvFsk"
+local SUPABASE_URL  = "https://aamxhmrecxtiecjevyht.supabase.co"
+local SUPABASE_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhbXhobXJlY3h0aWVjamV2eWh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNTY1MzgsImV4cCI6MjA5NjkzMjUzOH0.RJDYdY9wPVHTerzx9t9PgMKkEGv3zVp-WPF1joYGRL0"
 local SEND_INTERVAL = 30  -- seconds between syncs
 
 -- ── SERVICES ─────────────────────────────────────────────────────
@@ -137,6 +136,11 @@ task_spawn(function()
 
     -- ── HTTP config (built once) ──────────────────────────────────
     local url = SUPABASE_URL .. "/rest/v1/accounts?on_conflict=username"
+    local baseHeaders = {
+        ["apikey"]        = SUPABASE_KEY,
+        ["Authorization"] = "Bearer " .. SUPABASE_KEY,
+        ["Content-Type"]  = "application/json",
+    }
     local headers = {
         ["apikey"]        = SUPABASE_KEY,
         ["Authorization"] = "Bearer " .. SUPABASE_KEY,
@@ -144,7 +148,60 @@ task_spawn(function()
         ["Prefer"]        = "resolution=merge-duplicates,return=minimal",
     }
 
-    print("[Supabase] Ready:", LP.Name)
+    -- ── Fetch PC name from gtd_imported_accounts ──────────────────
+    local PC_NAME = ""
+    pcall(function()
+        -- Fetch all accounts from FarmSync to find this username's device
+        local FARMSYNC_TOKEN = "5af9cbb1e6f19bd52d720ceba7c3549d4193c13e96ac476bd2c4c49ef214ec0c"
+        local fsHeaders = {
+            ["Authorization"] = "Bearer " .. FARMSYNC_TOKEN,
+            ["Content-Type"]  = "application/json",
+        }
+
+        -- Get accounts to find device_id for this username
+        local accRes = requestFunc({
+            Url     = "https://api.farmsync.cloud/api/self/accounts",
+            Method  = "GET",
+            Headers = fsHeaders,
+        })
+        local deviceId = nil
+        if accRes and accRes.StatusCode == 200 then
+            local ok2, accs = pcall(function() return HttpService:JSONDecode(accRes.Body) end)
+            if ok2 and accs then
+                for _, a in ipairs(accs) do
+                    if a.username and a.username:lower() == LP.Name:lower() then
+                        deviceId = a.device_id
+                        break
+                    end
+                end
+            end
+        end
+
+        -- Get devices to resolve device_id → PC label
+        if deviceId then
+            local devRes = requestFunc({
+                Url     = "https://api.farmsync.cloud/api/devices",
+                Method  = "GET",
+                Headers = fsHeaders,
+            })
+            if devRes and devRes.StatusCode == 200 then
+                local ok3, body = pcall(function() return HttpService:JSONDecode(devRes.Body) end)
+                if ok3 and body then
+                    local devList = body.value or body
+                    if type(devList) == "table" then
+                        for _, d in ipairs(devList) do
+                            if d.id == deviceId then
+                                local note = d.device_note and d.device_note:match("^%s*(.-)%s*$") or ""
+                                PC_NAME = (note ~= "") and note or (d.device_name or deviceId)
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    print("[Supabase] Ready:", LP.Name, "| PC:", PC_NAME ~= "" and PC_NAME or "(unassigned)")
 
     -- ── Dedup state ───────────────────────────────────────────────
     local lastPayloadKey  = ""
@@ -173,29 +230,38 @@ task_spawn(function()
         end
         if #sf:GetChildren() == 0 then return nil, false end
 
-        local merged, order = {}, {}
+        local merged, order, displayNames = {}, {}, {}
 
-        -- Scan every unit_ descendant in the entire SF subtree
+        -- Scan all row-frames inside the SF; skip bare Frame containers (no Title)
         local function scanAll()
-            for _, obj in ipairs(sf:GetDescendants()) do
-                if string_match(obj.Name, "^unit_") then
-                    local qty = 1
-                    local f = obj:FindFirstChild("Frame")
-                    if f then
-                        local img = f:FindFirstChild("ImageLabel")
-                        if img then
-                            local c = img:FindFirstChild("Count")
-                            if c and c.Text and c.Text ~= "" then
-                                local d = string_match(c.Text, "(%d+)")
-                                if d then
-                                    local p = tonumber(d)
-                                    if p and p > 0 then qty = p end
+            for _, rowFrame in ipairs(sf:GetChildren()) do
+                if rowFrame:IsA("GuiObject") then
+                    for _, obj in ipairs(rowFrame:GetChildren()) do
+                        if obj:IsA("GuiObject") then
+                            -- Only real items have Frame.ImageLabel.Title
+                            local titleOk, titleText = pcall(function()
+                                return obj.Frame.ImageLabel.Title.Text
+                            end)
+                            if titleOk and titleText and titleText ~= "" then
+                                local qty = 1
+                                local countOk, countText = pcall(function()
+                                    return obj.Frame.ImageLabel.Count.Text
+                                end)
+                                if countOk and countText and countText ~= "" then
+                                    local d = string_match(countText, "(%d+)")
+                                    if d then
+                                        local p = tonumber(d)
+                                        if p and p > 0 then qty = p end
+                                    end
                                 end
+                                if not merged[obj.Name] then
+                                    table_insert(order, obj.Name)
+                                    displayNames[obj.Name] = titleText
+                                end
+                                merged[obj.Name] = qty
                             end
                         end
                     end
-                    if not merged[obj.Name] then table_insert(order, obj.Name) end
-                    merged[obj.Name] = qty
                 end
             end
         end
@@ -235,7 +301,7 @@ task_spawn(function()
 
         local inv = {}
         for _, name in ipairs(order) do
-            table_insert(inv, { name = name, quantity = merged[name] })
+            table_insert(inv, { name = name, displayName = displayNames[name], quantity = merged[name] })
         end
         return inv, true
     end
@@ -250,11 +316,7 @@ task_spawn(function()
         local inLobby   = isLobby()
         local lobbyStr  = inLobby and "lobby" or "farming"
         local seeds     = math_floor(data.Seeds      or 0)
-        local gems      = math_floor(data.SpaceGems  or 0)
-        local xp        = math_floor(data.XP         or data.Xp        or 0)
-        local gamesWon  = math_floor(data.GamesWon   or data.GameWins  or 0)
-        local wave      = math_floor(data.Wave       or data.WaveNum   or 0)
-        local mapName   = tostring(data.Map or data.MapName or "") -- only sent if column exists
+        local mapName   = tostring(data.Map or data.MapName or "")
 
         -- ── Inventory: only re-scan when in lobby ─────────────────
         local invJSON = nil
@@ -291,7 +353,7 @@ task_spawn(function()
 
         -- ── Full dedup key (includes all tracked fields) ──────────
         local payloadKey = table.concat({
-            lobbyStr, seeds, gems, xp, gamesWon, wave, mapName,
+            lobbyStr, seeds, mapName,
             inLobby and lastInvKey or ""
         }, "|")
 
@@ -303,12 +365,7 @@ task_spawn(function()
         -- ── Build and send payload ────────────────────────────────
         local payloadTable = {
             username   = LP.Name,
-            pc         = PC_NAME,
             seeds      = seeds,
-            gems       = gems,
-            xp         = xp,
-            games_won  = gamesWon,
-            wave       = wave,
             lobby      = lobbyStr,
             updated_at = getISO8601(),
         }

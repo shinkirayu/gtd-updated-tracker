@@ -3,6 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, Sparkles, Inbox, Package, Shield, Coins, AlertCircle } from 'lucide-react';
 import { InventoryItem } from '../types';
 import AssetImage from './AssetImage';
+import { gtdUnitsList } from '../data/gtdUnits';
+
+// ID → display name lookup built once from the units database
+const gtdNameMap = new Map<string, string>(gtdUnitsList.map(u => [u.ID, u.Name]));
 
 interface InventoryDrawerProps {
   username: string;
@@ -70,18 +74,19 @@ function parseItemMetadata(item: InventoryItem) {
   return { rarity, category, icon };
 }
 
-// Helper function to remove client-side debug formatting and capitalize every word
-function formatItemName(name: string): string {
-  if (!name) return '';
-  let cleaned = name.replace(/unit_/gi, '');
-  cleaned = cleaned.replace(/_/g, ' ');
-  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+// Resolve display name: units database first, then strip known prefixes
+function formatItemName(rawName: string, displayName?: string): string {
+  if (!rawName) return '';
+  if (displayName) return displayName;
+  const dbName = gtdNameMap.get(rawName);
+  if (dbName) return dbName;
+  let cleaned = rawName
+    .replace(/^dp_wt_unit_|^dp_unit_|^dp_gd_|^dp_|^gp_|^unit_/i, '')
+    .replace(/_/g, ' ')
+    .trim();
   return cleaned
     .split(' ')
-    .map((word) => {
-      if (!word) return '';
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    })
+    .map(w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '')
     .join(' ');
 }
 
@@ -94,7 +99,7 @@ export default function InventoryDrawer({ username, inventory, onClose }: Invent
     return inventory.map((item) => {
       const formattedItem = {
         ...item,
-        name: formatItemName(item.name),
+        name: formatItemName(item.name, item.displayName),
         rawName: item.name,
       };
       const meta = parseItemMetadata(formattedItem);
@@ -251,6 +256,11 @@ export default function InventoryDrawer({ username, inventory, onClose }: Invent
                         <span className="text-[10px] font-bold text-zinc-150 block truncate leading-tight px-0.5 group-hover:text-white">
                           {item.name}
                         </span>
+                        {item.rawName && item.rawName !== item.name && (
+                          <span className="text-[8px] font-mono text-zinc-600 block truncate px-0.5 mt-0.5">
+                            {item.rawName}
+                          </span>
+                        )}
                         <span className="text-[9px] font-mono font-black text-indigo-400 block mt-0.5">
                           x{item.quantity.toLocaleString()}
                         </span>

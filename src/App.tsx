@@ -33,9 +33,11 @@ import UnitsTab from './components/UnitsTab';
 import ListingsTab from './components/ListingsTab';
 import { gtdUnitsList, getRarityDetails } from './data/gtdUnits';
 
+const gtdNameMap = new Map<string, string>(gtdUnitsList.map(u => [u.ID, u.Name]));
+
 // Supabase Connection Client
-const DEFAULT_SUPABASE_URL = "https://nnpnqlafladvmtwbrhvi.supabase.co";
-const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ucG5xbGFmbGFkdm10d2JyaHZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxNTc2MDgsImV4cCI6MjA5NTczMzYwOH0.R5voiwL96l9dURtx18ttW4ghVSwSbGorvL_aTCYvFsk";
+const DEFAULT_SUPABASE_URL = "https://aamxhmrecxtiecjevyht.supabase.co";
+const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhbXhobXJlY3h0aWVjamV2eWh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNTY1MzgsImV4cCI6MjA5NjkzMjUzOH0.RJDYdY9wPVHTerzx9t9PgMKkEGv3zVp-WPF1joYGRL0";
 
 let supabaseUrl = (() => {
   try {
@@ -55,18 +57,19 @@ let supabaseKey = (() => {
 
 export let supabase = createClient(supabaseUrl, supabaseKey);
 
-// Helper function to remove client-side debug formatting and capitalize every word
-function formatItemName(name: string): string {
-  if (!name) return '';
-  let cleaned = name.replace(/unit_/gi, '');
-  cleaned = cleaned.replace(/_/g, ' ');
-  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+// Resolve display name: units database first, then strip known prefixes
+function formatItemName(rawName: string, displayName?: string): string {
+  if (!rawName) return '';
+  if (displayName) return displayName;
+  const dbName = gtdNameMap.get(rawName);
+  if (dbName) return dbName;
+  let cleaned = rawName
+    .replace(/^dp_wt_unit_|^dp_unit_|^dp_gd_|^dp_|^gp_|^unit_/i, '')
+    .replace(/_/g, ' ')
+    .trim();
   return cleaned
     .split(' ')
-    .map((word) => {
-      if (!word) return '';
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    })
+    .map(w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '')
     .join(' ');
 }
 
@@ -88,11 +91,7 @@ interface GameConfig {
     game: boolean;
     map: boolean;
     seeds: boolean;
-    gems: boolean;
     storage: boolean;
-    xp: boolean;
-    gamesWon: boolean;
-    wave: boolean;
     lobby: boolean;
     updated: boolean;
   };
@@ -113,11 +112,7 @@ export default function App() {
     game: true,
     map: true,
     seeds: true,
-    gems: true,
     storage: true,
-    xp: false,
-    gamesWon: false,
-    wave: false,
     lobby: false,
     updated: true
   });
@@ -766,13 +761,13 @@ export default function App() {
         const statusVal = (acc as any).status || 'offline';
         const lobbyVal = (acc as any).lobby || '';
 
-        sql += `INSERT INTO accounts (username, pc, seeds, gems, xp, prismleaf_claimed, units, wave, status, games_won, gamepasses, inventory, updated_at, lobby) VALUES (${escapeVal(acc.username)}, ${escapeVal(acc.pc)}, ${acc.seeds ?? 0}, ${acc.gems ?? 0}, ${acc.xp ?? 0}, ${isClaimed}, ${unitsVal}, ${acc.wave ?? 0}, ${escapeVal(statusVal)}, ${acc.games_won ?? 0}, ${escapeVal(gpStr)}::jsonb, ${escapeVal(invStr)}::jsonb, ${escapeVal(acc.updated_at)}::timestamptz, ${escapeVal(lobbyVal)}) ON CONFLICT (username) DO UPDATE SET pc=EXCLUDED.pc, seeds=EXCLUDED.seeds, gems=EXCLUDED.gems, xp=EXCLUDED.xp, prismleaf_claimed=EXCLUDED.prismleaf_claimed, units=EXCLUDED.units, wave=EXCLUDED.wave, status=EXCLUDED.status, games_won=EXCLUDED.games_won, gamepasses=EXCLUDED.gamepasses, inventory=EXCLUDED.inventory, updated_at=EXCLUDED.updated_at, lobby=EXCLUDED.lobby;\n`;
+        sql += `INSERT INTO accounts (username, seeds, units, status, inventory, updated_at, lobby) VALUES (${escapeVal(acc.username)}, ${acc.seeds ?? 0}, ${unitsVal}, ${escapeVal(statusVal)}, ${escapeVal(invStr)}::jsonb, ${escapeVal(acc.updated_at)}::timestamptz, ${escapeVal(lobbyVal)}) ON CONFLICT (username) DO UPDATE SET seeds=EXCLUDED.seeds, units=EXCLUDED.units, status=EXCLUDED.status, inventory=EXCLUDED.inventory, updated_at=EXCLUDED.updated_at, lobby=EXCLUDED.lobby;\n`;
       } else if (dialect === 'mysql') {
-        sql += `INSERT INTO farm_accounts (username, pc, gems, seeds, xp, games_won, wave, updated_at) VALUES (${escapeVal(acc.username)}, ${escapeVal(acc.pc)}, ${acc.gems ?? 0}, ${acc.seeds ?? 0}, ${acc.xp ?? 0}, ${acc.games_won ?? 0}, ${acc.wave ?? 0}, ${escapeVal(acc.updated_at)}) ON DUPLICATE KEY UPDATE pc=${escapeVal(acc.pc)}, gems=${acc.gems ?? 0}, seeds=${acc.seeds ?? 0}, xp=${acc.xp ?? 0}, games_won=${acc.games_won ?? 0}, wave=${acc.wave ?? 0}, updated_at=${escapeVal(acc.updated_at)};\n`;
+        sql += `INSERT INTO farm_accounts (username, seeds, updated_at) VALUES (${escapeVal(acc.username)}, ${acc.seeds ?? 0}, ${escapeVal(acc.updated_at)}) ON DUPLICATE KEY UPDATE seeds=${acc.seeds ?? 0}, updated_at=${escapeVal(acc.updated_at)};\n`;
       } else if (dialect === 'postgres') {
-        sql += `INSERT INTO farm_accounts (username, pc, gems, seeds, xp, games_won, wave, updated_at) VALUES (${escapeVal(acc.username)}, ${escapeVal(acc.pc)}, ${acc.gems ?? 0}, ${acc.seeds ?? 0}, ${acc.xp ?? 0}, ${acc.games_won ?? 0}, ${acc.wave ?? 0}, ${escapeVal(acc.updated_at)}) ON CONFLICT (username) DO UPDATE SET pc=EXCLUDED.pc, gems=EXCLUDED.gems, seeds=EXCLUDED.seeds, xp=EXCLUDED.xp, games_won=EXCLUDED.games_won, wave=EXCLUDED.wave, updated_at=EXCLUDED.updated_at;\n`;
+        sql += `INSERT INTO farm_accounts (username, seeds, updated_at) VALUES (${escapeVal(acc.username)}, ${acc.seeds ?? 0}, ${escapeVal(acc.updated_at)}) ON CONFLICT (username) DO UPDATE SET seeds=EXCLUDED.seeds, updated_at=EXCLUDED.updated_at;\n`;
       } else {
-        sql += `INSERT OR REPLACE INTO farm_accounts (username, pc, gems, seeds, xp, games_won, wave, updated_at) VALUES (${escapeVal(acc.username)}, ${escapeVal(acc.pc)}, ${acc.gems ?? 0}, ${acc.seeds ?? 0}, ${acc.xp ?? 0}, ${acc.games_won ?? 0}, ${acc.wave ?? 0}, ${escapeVal(acc.updated_at)});\n`;
+        sql += `INSERT OR REPLACE INTO farm_accounts (username, seeds, updated_at) VALUES (${escapeVal(acc.username)}, ${acc.seeds ?? 0}, ${escapeVal(acc.updated_at)});\n`;
       }
     });
 
@@ -1056,7 +1051,7 @@ export default function App() {
               itemsMap[i.name].holders.push({
                 holderName: acc.username,
                 type: 'farm',
-                details: acc.pc || 'No PC',
+                details: 'No PC',
                 qty: i.quantity
               });
             });
@@ -1241,6 +1236,13 @@ export default function App() {
   const [importedAccounts, setImportedAccounts] = useState<ImportedAccount[]>([]);
   const [statusCategories, setStatusCategories] = useState<string[]>(['unused', 'banned']);
 
+  // -- FARMSYNC API SYNC --
+  const [farmsyncToken, setFarmsyncToken] = useState<string>(() => {
+    try { return localStorage.getItem('gtd_farmsync_token') || '5af9cbb1e6f19bd52d720ceba7c3549d4193c13e96ac476bd2c4c49ef214ec0c'; } catch { return ''; }
+  });
+  const [farmsyncSyncing, setFarmsyncSyncing] = useState(false);
+  const [farmsyncStatus, setFarmsyncStatus] = useState<string | null>(null);
+
   const [accountsImportText, setAccountsImportText] = useState('');
   const [importAssignPc, setImportAssignPc] = useState('');
   const [importAssignGame, setImportAssignGame] = useState('');
@@ -1276,11 +1278,7 @@ export default function App() {
               game: true,
               map: true,
               seeds: true,
-              gems: true,
               storage: true,
-              xp: false,
-              gamesWon: false,
-              wave: false,
               lobby: false,
               updated: true
             },
@@ -1294,11 +1292,7 @@ export default function App() {
               game: true,
               map: true,
               seeds: false,
-              gems: true,
               storage: true,
-              xp: true,
-              gamesWon: false,
-              wave: false,
               lobby: false,
               updated: true
             },
@@ -1312,11 +1306,7 @@ export default function App() {
               game: true,
               map: true,
               seeds: false,
-              gems: true,
               storage: false,
-              xp: true,
-              gamesWon: true,
-              wave: true,
               lobby: false,
               updated: true
             },
@@ -1388,11 +1378,7 @@ export default function App() {
       game: true,
       map: true,
       seeds: true,
-      gems: true,
       storage: true,
-      xp: false,
-      gamesWon: false,
-      wave: false,
       lobby: false,
       updated: true
     };
@@ -1650,6 +1636,77 @@ export default function App() {
     }
   };
 
+  // Sync accounts from FarmSync API
+  const syncFromFarmsync = async (token: string) => {
+    if (!token.trim()) {
+      setFarmsyncStatus('No token provided.');
+      return;
+    }
+    setFarmsyncSyncing(true);
+    setFarmsyncStatus(null);
+    try {
+      const authHeaders = { 'Authorization': `Bearer ${token.trim()}`, 'Content-Type': 'application/json' };
+
+      const [devRes, accRes] = await Promise.all([
+        fetch('/farmsync/api/devices', { headers: authHeaders }),
+        fetch('/farmsync/api/self/accounts', { headers: authHeaders }),
+      ]);
+
+      if (!devRes.ok || !accRes.ok) {
+        setFarmsyncStatus(`API error: devices ${devRes.status}, accounts ${accRes.status}`);
+        return;
+      }
+
+      const devBody = await devRes.json();
+      // Devices response is { value: [...], Count: N }
+      const devices: any[] = Array.isArray(devBody) ? devBody : (devBody.value || []);
+      const fsAccounts: any[] = await accRes.json();
+
+      // Build device_id → label map; prefer device_note if set, else device_name
+      const deviceMap = new Map<string, string>(
+        devices.map((d: any) => [d.id, (d.device_note && d.device_note.trim()) ? d.device_note.trim() : (d.device_name || d.id)])
+      );
+
+      // Map FarmSync accounts → ImportedAccount
+      const mapped: ImportedAccount[] = fsAccounts.map((a: any) => ({
+        username: a.username,
+        pass: a.password || '',
+        cookie: a.cookie || '',
+        pcCategoryByClient: a.device_id ? (deviceMap.get(a.device_id) || a.device_id) : '',
+        game: a.tag || '',
+        status: a.enabled ? 'active' : 'unused',
+        createdAt: a.last_updated || new Date().toISOString(),
+      }));
+
+      // Merge with existing — FarmSync data wins on matching usernames
+      setImportedAccounts(prev => {
+        const merged = [...prev];
+        mapped.forEach(incoming => {
+          const idx = merged.findIndex(e => e.username.toLowerCase() === incoming.username.toLowerCase());
+          if (idx > -1) merged[idx] = { ...merged[idx], ...incoming };
+          else merged.push(incoming);
+        });
+        try { localStorage.setItem('accounts_imported_collection', JSON.stringify(merged)); } catch {}
+
+        // Rebuild credentials map
+        const newCredsMap: Record<string, { pass: string; cookie: string }> = {};
+        merged.forEach(acc => {
+          newCredsMap[acc.username.toLowerCase()] = { pass: acc.pass || '', cookie: acc.cookie || '' };
+        });
+        setCredentialsMap(newCredsMap);
+        try { localStorage.setItem('accounts_credentials_map', JSON.stringify(newCredsMap)); } catch {}
+
+        return merged;
+      });
+
+      setFarmsyncStatus(`Synced ${mapped.length} accounts across ${devices.length} devices.`);
+    } catch (err: any) {
+      setFarmsyncStatus(`Sync failed: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setFarmsyncSyncing(false);
+    }
+  };
+
   // Fetch accounts from Supabase database
   async function loadData(forceSyncConfig: boolean = false) {
     setIsRefreshing(true);
@@ -1811,12 +1868,7 @@ export default function App() {
           .from('accounts')
           .upsert({
             username: '__UI_PRESENCE_HEARTBEAT__',
-            pc: 'dashboard_host',
             seeds: 0,
-            gems: 0,
-            xp: 0,
-            games_won: 0,
-            wave: 0,
             units: '0',
             updated_at: nowIso
           }, { onConflict: 'username' });
@@ -1856,9 +1908,8 @@ export default function App() {
 
       // 2. Search Query Filter
       const term = search.toLowerCase().trim();
-      const matchSearch = !term || 
+      const matchSearch = !term ||
         (acc.username || '').toLowerCase().includes(term) ||
-        (acc.pc || '').toLowerCase().includes(term) ||
         (acc.units || '').toString().toLowerCase().includes(term);
 
       if (!matchSearch) return false;
@@ -1881,7 +1932,7 @@ export default function App() {
       const local = importedAccounts.find(
         (ia) => ia.username.toLowerCase() === acc.username.toLowerCase()
       );
-      const pcName = (local?.pcCategoryByClient || acc.pc || 'PC-UNKNOWN').toUpperCase().trim();
+      const pcName = (local?.pcCategoryByClient || 'PC-UNKNOWN').toUpperCase().trim();
       if (!groups[pcName]) {
         groups[pcName] = [];
       }
@@ -1893,7 +1944,6 @@ export default function App() {
   // Aggregate high level statistics for system summary
   const statistics = useMemo(() => {
     let onlineCount = 0;
-    let totalGems = 0;
     let totalSeeds = 0;
     const uniquePcs = new Set<string>();
 
@@ -1901,14 +1951,13 @@ export default function App() {
       const local = importedAccounts.find(
         (ia) => ia.username.toLowerCase() === acc.username.toLowerCase()
       );
-      const pcName = (local?.pcCategoryByClient || acc.pc || 'PC-UNKNOWN').toUpperCase().trim();
+      const pcName = (local?.pcCategoryByClient || 'PC-UNKNOWN').toUpperCase().trim();
       uniquePcs.add(pcName);
 
       const diffSeconds = Math.floor((new Date().getTime() - new Date(acc.updated_at).getTime()) / 1000);
       if (diffSeconds <= 300) {
         onlineCount++;
       }
-      totalGems += Number(acc.gems || 0);
       totalSeeds += Number(acc.seeds || 0);
     });
 
@@ -1917,7 +1966,6 @@ export default function App() {
       totalPcs: uniquePcs.size,
       onlineCount,
       offlineCount: accounts.length - onlineCount,
-      totalGems,
       totalSeeds,
     };
   }, [accounts, importedAccounts]);
@@ -1981,7 +2029,7 @@ export default function App() {
       if (acc.inventory && Array.isArray(acc.inventory)) {
         acc.inventory.forEach((item) => {
           if (!item || !item.name) return;
-          const nameTrimmed = formatItemName(item.name);
+          const nameTrimmed = formatItemName(item.name, item.displayName);
           
           if (!items[nameTrimmed]) {
             let rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' = item.rarity || 'common';
@@ -2042,9 +2090,10 @@ export default function App() {
             };
           }
 
+          const localIa = importedAccounts.find(ia => ia.username.toLowerCase() === acc.username.toLowerCase());
           items[nameTrimmed].accounts.push({
             username: acc.username,
-            pc: acc.pc,
+            pc: localIa?.pcCategoryByClient || 'PC-UNKNOWN',
             quantity: Number(item.quantity) || 0,
             updated_at: acc.updated_at,
           });
@@ -2055,7 +2104,7 @@ export default function App() {
     });
 
     return items;
-  }, [accounts]);
+  }, [accounts, importedAccounts]);
 
   const filteredStorageItems = useMemo(() => {
     const list = Object.values(aggregateStorage) as {
@@ -2618,11 +2667,7 @@ export default function App() {
                                 {visibleColumns.map && <th className="py-2.5 px-3 font-semibold text-center">Map</th>}
                                 {visibleColumns.seeds && <th className="py-2.5 px-3 font-semibold text-center">Seeds</th>}
                                 {visibleColumns.seeds && <th className="py-2.5 px-3 font-semibold text-center text-emerald-600">+Today</th>}
-                                {visibleColumns.gems && <th className="py-2.5 px-3 font-semibold text-center">Gems</th>}
                                 {visibleColumns.storage && <th className="py-2.5 px-3 font-semibold text-center">Storage</th>}
-                                {visibleColumns.xp && <th className="py-2.5 px-3 font-semibold text-center">XP</th>}
-                                {visibleColumns.gamesWon && <th className="py-2.5 px-3 font-semibold text-center">Games Won</th>}
-                                {visibleColumns.wave && <th className="py-2.5 px-3 font-semibold text-center">Wave</th>}
                                 {visibleColumns.lobby && <th className="py-2.5 px-3 font-semibold text-center">Lobby</th>}
                                 <th className="py-2.5 px-3 font-semibold text-center">Key Items</th>
                                 <th className="py-2.5 px-3 font-semibold text-center">Updated</th>
@@ -2756,15 +2801,6 @@ export default function App() {
                                       </td>
                                     )}
 
-                                    {/* Gems Column */}
-                                    {visibleColumns.gems && (
-                                      <td className="py-3 px-3 text-center font-mono text-indigo-400">
-                                        <span className="text-xs font-bold">
-                                          {Number(acc.gems || 0).toLocaleString()} 💎
-                                        </span>
-                                      </td>
-                                    )}
-
                                     {/* Storage Column with Popup activation button */}
                                     {visibleColumns.storage && (
                                       <td className="py-3 px-3 text-center">
@@ -2787,33 +2823,6 @@ export default function App() {
                                             );
                                           })()}
                                         </div>
-                                      </td>
-                                    )}
-
-                                    {/* XP Column */}
-                                    {visibleColumns.xp && (
-                                      <td className="py-3 px-3 text-center font-mono text-zinc-350">
-                                        <span className="text-xs font-semibold">
-                                          {Number(acc.xp || 0).toLocaleString()} XP
-                                        </span>
-                                      </td>
-                                    )}
-
-                                    {/* Games Won Column */}
-                                    {visibleColumns.gamesWon && (
-                                      <td className="py-3 px-3 text-center font-mono text-indigo-400/85">
-                                        <span className="text-xs font-bold">
-                                          🏆 {Number(acc.games_won || 0).toLocaleString()}
-                                        </span>
-                                      </td>
-                                    )}
-
-                                    {/* Wave Column */}
-                                    {visibleColumns.wave && (
-                                      <td className="py-3 px-3 text-center font-mono text-emerald-400">
-                                        <span className="text-xs font-bold">
-                                          🌊 {Number(acc.wave || 0).toLocaleString()}
-                                        </span>
                                       </td>
                                     )}
 
@@ -2903,6 +2912,48 @@ export default function App() {
                 <span className="text-[11px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-1 rounded font-mono font-bold">
                   {importedAccounts.filter(ia => (ia.status || 'unused') === 'unused').length} Unused
                 </span>
+              </div>
+            </div>
+
+            {/* FarmSync API Sync Section */}
+            <div className="bg-zinc-900/25 border border-indigo-900/30 rounded-2xl p-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-zinc-900">
+                <div>
+                  <h4 className="text-xs font-bold font-display text-zinc-150 flex items-center gap-2">
+                    <span>⚡</span> FarmSync Auto-Import
+                  </h4>
+                  <p className="text-[10px] text-zinc-500 mt-0.5">
+                    Pulls all devices + accounts from FarmSync — username, password, cookie, and PC assignment included.
+                  </p>
+                </div>
+                {farmsyncStatus && (
+                  <span className={`text-[10px] font-mono px-2 py-1 rounded border shrink-0 ${
+                    farmsyncStatus.startsWith('Synced')
+                      ? 'text-emerald-400 bg-emerald-950/30 border-emerald-900/40'
+                      : 'text-rose-400 bg-rose-950/30 border-rose-900/40'
+                  }`}>
+                    {farmsyncStatus}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="password"
+                  placeholder="Paste your FarmSync Bearer token..."
+                  value={farmsyncToken}
+                  onChange={e => {
+                    setFarmsyncToken(e.target.value);
+                    try { localStorage.setItem('gtd_farmsync_token', e.target.value); } catch {}
+                  }}
+                  className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <button
+                  onClick={() => syncFromFarmsync(farmsyncToken)}
+                  disabled={farmsyncSyncing || !farmsyncToken.trim()}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition shrink-0 cursor-pointer"
+                >
+                  {farmsyncSyncing ? 'Syncing...' : 'Sync Now'}
+                </button>
               </div>
             </div>
 
@@ -3156,7 +3207,6 @@ export default function App() {
                     <option value="all">All PCs / Categories</option>
                     <option value="PC-UNKNOWN">PC-UNKNOWN</option>
                     {Array.from(new Set([
-                      ...accounts.map(a => a.pc).filter(Boolean),
                       ...importedAccounts.map(a => a.pcCategoryByClient).filter(Boolean)
                     ])).filter(pc => pc && pc !== 'PC-UNKNOWN').map(pc => (
                       <option key={pc} value={pc}>{pc}</option>
@@ -3252,7 +3302,6 @@ export default function App() {
                       <option value="" disabled>--- select ---</option>
                       <option value="PC-UNKNOWN">PC-UNKNOWN</option>
                       {Array.from(new Set([
-                        ...accounts.map(a => a.pc).filter(Boolean),
                         ...importedAccounts.map(a => a.pcCategoryByClient).filter(Boolean)
                       ])).filter(pc => pc && pc !== 'PC-UNKNOWN').map(pc => (
                         <option key={pc} value={pc}>{pc}</option>
@@ -5001,11 +5050,7 @@ export default function App() {
                       { key: 'game', label: '🎮 Game' },
                       { key: 'map', label: '🗺️ Map' },
                       { key: 'seeds', label: '🌱 Seeds Status' },
-                      { key: 'gems', label: '💎 Gems Count' },
                       { key: 'storage', label: '📦 Vault Storage Count' },
-                      { key: 'xp', label: '📈 XP Level Progress' },
-                      { key: 'gamesWon', label: '🏆 Games Won Count' },
-                      { key: 'wave', label: '🌊 Wave Iteration' },
                       { key: 'lobby', label: '🚪 Lobby / Map State' }
                     ].map((col) => {
                       const isChecked = newGameColumns[col.key as keyof typeof newGameColumns];
@@ -5068,11 +5113,7 @@ export default function App() {
                         game: newGameColumns.game,
                         map: newGameColumns.map,
                         seeds: newGameColumns.seeds,
-                        gems: newGameColumns.gems,
                         storage: newGameColumns.storage,
-                        xp: newGameColumns.xp,
-                        gamesWon: newGameColumns.gamesWon,
-                        wave: newGameColumns.wave,
                         lobby: newGameColumns.lobby,
                         updated: true
                       },
@@ -5087,11 +5128,7 @@ export default function App() {
                       game: true,
                       map: true,
                       seeds: true,
-                      gems: true,
                       storage: true,
-                      xp: false,
-                      gamesWon: false,
-                      wave: false,
                       lobby: false,
                       updated: true
                     });
