@@ -158,6 +158,16 @@ export default function App() {
     } catch {}
     return {};
   });
+  const [seedsSnapshotTimestamp, setSeedsSnapshotTimestamp] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('gtd_seeds_noon_snapshot');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return typeof parsed.timestamp === 'number' ? parsed.timestamp : 0;
+      }
+    } catch {}
+    return 0;
+  });
   const [schemaTablesMissing, setSchemaTablesMissing] = useState(false);
   const [schemaTablesStatusText, setSchemaTablesStatusText] = useState<string | null>(null);
 
@@ -1917,17 +1927,14 @@ export default function App() {
     if (accounts.length === 0) return;
 
     const now = new Date();
-    const lastNoon = new Date(now);
-    lastNoon.setHours(12, 0, 0, 0);
-    if (now < lastNoon) {
-      lastNoon.setDate(lastNoon.getDate() - 1);
-    }
+    const lastMidnight = new Date(now);
+    lastMidnight.setHours(0, 0, 0, 0);
 
     try {
       const saved = localStorage.getItem('gtd_seeds_noon_snapshot');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (typeof parsed.timestamp === 'number' && parsed.timestamp >= lastNoon.getTime()) {
+        if (typeof parsed.timestamp === 'number' && parsed.timestamp >= lastMidnight.getTime()) {
           // Snapshot is from the current noon period — merge in any new accounts
           const updated = { ...parsed.accounts } as Record<string, number>;
           let added = false;
@@ -1942,15 +1949,18 @@ export default function App() {
             localStorage.setItem('gtd_seeds_noon_snapshot', JSON.stringify(newSnapshot));
           }
           setSeedsNoonBaseline(updated);
+          setSeedsSnapshotTimestamp(parsed.timestamp);
           return;
         }
       }
       // No snapshot or snapshot is from a previous period — reset baseline
       const accountsMap: Record<string, number> = {};
       accounts.forEach((acc) => { accountsMap[acc.username] = Number(acc.seeds || 0); });
-      const newSnapshot = { accounts: accountsMap, timestamp: Date.now() };
+      const ts = Date.now();
+      const newSnapshot = { accounts: accountsMap, timestamp: ts };
       localStorage.setItem('gtd_seeds_noon_snapshot', JSON.stringify(newSnapshot));
       setSeedsNoonBaseline(accountsMap);
+      setSeedsSnapshotTimestamp(ts);
     } catch {}
   }, [accounts]);
 
@@ -2480,7 +2490,7 @@ export default function App() {
                     <span className="block text-xl font-bold font-display text-emerald-400 mt-1">
                       +{Math.max(0, statistics.totalSeeds - Object.values(seedsNoonBaseline).reduce((s, v) => s + v, 0)).toLocaleString()}
                     </span>
-                    <span className="text-[9px] text-zinc-600 font-mono block mt-0.5">Resets 12:00 noon</span>
+                    <span className="text-[9px] text-zinc-600 font-mono block mt-0.5">Resets 12:00 AM</span>
                   </div>
                   <span className="text-lg shrink-0">🌱</span>
                 </div>
@@ -2622,6 +2632,9 @@ export default function App() {
                               {accountsInPc.map((acc) => {
                                 const age = Math.floor((new Date().getTime() - new Date(acc.updated_at).getTime()) / 1000);
                                 const isOnline = age <= 300;
+                                const seedsGained = Number(acc.seeds || 0) - (seedsNoonBaseline[acc.username] ?? Number(acc.seeds || 0));
+                                const snapshotAge = (Date.now() - seedsSnapshotTimestamp) / 1000;
+                                const isNoSeeds = isOnline && seedsGained <= 0 && snapshotAge > 1200;
 
                                 return (
                                   <tr
@@ -2648,11 +2661,19 @@ export default function App() {
                                             {acc.username}
                                           </span>
                                           {credentialsMap[acc.username.toLowerCase()] && (
-                                            <span 
+                                            <span
                                               className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1 rounded font-mono font-bold shrink-0 cursor-help"
                                               title="Matched: user:pass:cookie imported"
                                             >
                                               🔑
+                                            </span>
+                                          )}
+                                          {isNoSeeds && (
+                                            <span
+                                              className="text-[9px] bg-rose-500/10 text-rose-400 border border-rose-500/25 px-1.5 py-0.5 rounded font-mono font-bold shrink-0"
+                                              title="Online but no seeds gained since last noon reset"
+                                            >
+                                              NO SEEDS
                                             </span>
                                           )}
                                         </div>
@@ -2723,17 +2744,17 @@ export default function App() {
                                     )}
 
                                     {/* Seeds Today Column */}
-                                    {visibleColumns.seeds && (() => {
-                                      const baseline = seedsNoonBaseline[acc.username] ?? Number(acc.seeds || 0);
-                                      const gained = Number(acc.seeds || 0) - baseline;
-                                      return (
-                                        <td className="py-3 px-3 text-center font-mono">
-                                          <span className={`text-xs font-bold ${gained > 0 ? 'text-emerald-400' : gained < 0 ? 'text-rose-400' : 'text-zinc-600'}`}>
-                                            {gained > 0 ? '+' : ''}{gained.toLocaleString()}
+                                    {visibleColumns.seeds && (
+                                      <td className="py-3 px-3 text-center font-mono">
+                                        {seedsGained > 0 ? (
+                                          <span className="text-xs font-bold text-emerald-400">
+                                            +{seedsGained.toLocaleString()}
                                           </span>
-                                        </td>
-                                      );
-                                    })()}
+                                        ) : (
+                                          <span className="text-xs text-zinc-700">—</span>
+                                        )}
+                                      </td>
+                                    )}
 
                                     {/* Gems Column */}
                                     {visibleColumns.gems && (
