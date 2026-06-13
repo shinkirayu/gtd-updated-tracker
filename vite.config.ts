@@ -15,10 +15,11 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       proxy: {
-        '/farmsync': {
+        '/api/farmsync': {
           target: 'https://api.farmsync.cloud',
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/farmsync/, ''),
+          secure: false,
+          rewrite: (path) => path.replace(/^\/api\/farmsync/, ''),
         },
       },
     },

@@ -1362,6 +1362,27 @@ app.patch('/api/g2g/offer/:id', async (req, res) => {
   } catch (e: any) { res.status(e.response?.status || 500).json(e.response?.data || { error: 'Failed' }); }
 });
 
+// ── FarmSync proxy ────────────────────────────────────────────────────────────
+app.all('/api/farmsync/*', async (req: express.Request, res: express.Response) => {
+  const subPath = (req.params as any)[0] as string;
+  const targetUrl = `https://api.farmsync.cloud/${subPath}`;
+  try {
+    const r = await axios({
+      method: req.method as any,
+      url: targetUrl,
+      headers: {
+        authorization: req.headers['authorization'] || '',
+        'content-type': 'application/json',
+      },
+      params: req.query,
+      data: Object.keys(req.body || {}).length ? req.body : undefined,
+    });
+    res.status(r.status).json(r.data);
+  } catch (e: any) {
+    res.status(e.response?.status || 502).json(e.response?.data || { error: 'FarmSync proxy error' });
+  }
+});
+
 // Setup server integration with Vite for dynamic client loading
 async function start() {
   if (process.env.NODE_ENV !== 'production') {

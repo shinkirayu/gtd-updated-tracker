@@ -1648,19 +1648,26 @@ export default function App() {
       const authHeaders = { 'Authorization': `Bearer ${token.trim()}`, 'Content-Type': 'application/json' };
 
       const [devRes, accRes] = await Promise.all([
-        fetch('/farmsync/api/devices', { headers: authHeaders }),
-        fetch('/farmsync/api/self/accounts', { headers: authHeaders }),
+        fetch('/api/farmsync/api/devices', { headers: authHeaders }),
+        fetch('/api/farmsync/api/self/accounts', { headers: authHeaders }),
       ]);
+
+      const [devText, accText] = await Promise.all([devRes.text(), accRes.text()]);
+
+      if (devText.trimStart().startsWith('<') || accText.trimStart().startsWith('<')) {
+        setFarmsyncStatus('Proxy not active — restart the dev server (stop then npm run dev)');
+        return;
+      }
 
       if (!devRes.ok || !accRes.ok) {
         setFarmsyncStatus(`API error: devices ${devRes.status}, accounts ${accRes.status}`);
         return;
       }
 
-      const devBody = await devRes.json();
+      const devBody = JSON.parse(devText);
       // Devices response is { value: [...], Count: N }
       const devices: any[] = Array.isArray(devBody) ? devBody : (devBody.value || []);
-      const fsAccounts: any[] = await accRes.json();
+      const fsAccounts: any[] = JSON.parse(accText);
 
       // Build device_id → label map; prefer device_note if set, else device_name
       const deviceMap = new Map<string, string>(
