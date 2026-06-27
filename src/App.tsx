@@ -779,7 +779,9 @@ export default function App() {
       accounts.forEach(acc => {
         if (acc.inventory && Array.isArray(acc.inventory)) {
           acc.inventory.forEach(item => {
-            sql += `INSERT INTO farm_inventory (account_username, item_name, quantity, category, rarity) VALUES (${escapeVal(acc.username)}, ${escapeVal(item.name)}, ${item.quantity ?? 0}, ${escapeVal(item.category)}, ${escapeVal(item.rarity)});\n`;
+            const sqlItemName = formatItemName(item.id || item.name, item.id ? item.name : item.displayName);
+            const sqlQty = item.count ?? item.quantity ?? 0;
+            sql += `INSERT INTO farm_inventory (account_username, item_name, quantity, category, rarity) VALUES (${escapeVal(acc.username)}, ${escapeVal(sqlItemName)}, ${sqlQty}, ${escapeVal(item.category)}, ${escapeVal(item.rarity)});\n`;
           });
         }
       });
@@ -2035,8 +2037,13 @@ export default function App() {
     accounts.forEach((acc) => {
       if (acc.inventory && Array.isArray(acc.inventory)) {
         acc.inventory.forEach((item) => {
-          if (!item || !item.name) return;
-          const nameTrimmed = formatItemName(item.name, item.displayName);
+          if (!item || (!item.name && !item.id)) return;
+          // New format: { id (raw key), name (display), image, count }
+          // Old format: { name (raw key), displayName, quantity }
+          const rawId = item.id || item.name;
+          const resolvedDisplay = item.id ? item.name : item.displayName;
+          const itemQty = Number(item.count ?? item.quantity) || 0;
+          const nameTrimmed = formatItemName(rawId, resolvedDisplay);
           
           if (!items[nameTrimmed]) {
             let rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' = item.rarity || 'common';
@@ -2089,7 +2096,7 @@ export default function App() {
 
             items[nameTrimmed] = {
               name: nameTrimmed,
-              rawName: item.name,
+              rawName: rawId,
               rarity,
               icon,
               accounts: [],
@@ -2101,11 +2108,11 @@ export default function App() {
           items[nameTrimmed].accounts.push({
             username: acc.username,
             pc: localIa?.pcCategoryByClient || 'PC-UNKNOWN',
-            quantity: Number(item.quantity) || 0,
+            quantity: itemQty,
             updated_at: acc.updated_at,
           });
 
-          items[nameTrimmed].totalQuantity += (Number(item.quantity) || 0);
+          items[nameTrimmed].totalQuantity += itemQty;
         });
       }
     });
@@ -2792,6 +2799,11 @@ export default function App() {
                                         <span className="text-xs font-semibold">
                                           {Number(acc.seeds || 0).toLocaleString()} 🌱
                                         </span>
+                                        {acc.lucky_blocks != null && acc.lucky_blocks > 0 && (
+                                          <span className="block text-[10px] text-amber-400 font-bold mt-0.5">
+                                            {Number(acc.lucky_blocks).toLocaleString()} 🎲
+                                          </span>
+                                        )}
                                       </td>
                                     )}
 

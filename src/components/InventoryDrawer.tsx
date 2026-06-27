@@ -97,10 +97,17 @@ export default function InventoryDrawer({ username, inventory, onClose }: Invent
   const parsedItems = useMemo(() => {
     if (!inventory) return [];
     return inventory.map((item) => {
+      // New reporter.lua format: { id, name (display), image, count }
+      // Legacy format:           { name (raw ID), displayName, quantity }
+      const rawId = item.id || item.name;
+      const resolvedDisplay = item.id ? item.name : item.displayName;
+      const quantity = item.count ?? item.quantity ?? 0;
+
       const formattedItem = {
         ...item,
-        name: formatItemName(item.name, item.displayName),
-        rawName: item.name,
+        name: formatItemName(rawId, resolvedDisplay),
+        rawName: rawId,
+        quantity,
       };
       const meta = parseItemMetadata(formattedItem);
       return {
@@ -247,6 +254,7 @@ export default function InventoryDrawer({ username, inventory, onClose }: Invent
                           rawName={item.rawName}
                           fallbackEmoji={item.icon}
                           name={item.name}
+                          image={item.image}
                           className="w-12 h-12 object-contain select-none filter drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
                         />
                       </div>

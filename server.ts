@@ -1362,6 +1362,30 @@ app.patch('/api/g2g/offer/:id', async (req, res) => {
   } catch (e: any) { res.status(e.response?.status || 500).json(e.response?.data || { error: 'Failed' }); }
 });
 
+// ── Roblox thumbnail proxy ────────────────────────────────────────────────────
+app.get('/api/roblox-thumb', async (req, res) => {
+  const id = ((req.query.id as string) || '').trim();
+  if (!id || !/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid asset ID' });
+
+  const cacheKey = `rblx:${id}`;
+  const cached = getCached(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const r = await axios.get('https://thumbnails.roblox.com/v1/assets', {
+      params: { assetIds: id, returnPolicy: 'PlaceHolder', size: '150x150', format: 'Png', isCircular: false },
+      headers: { Accept: 'application/json' },
+      timeout: 8000,
+    });
+    const imageUrl: string | null = r.data?.data?.[0]?.imageUrl ?? null;
+    const result = { imageUrl };
+    setCached(cacheKey, result);
+    res.json(result);
+  } catch (e: any) {
+    res.status(502).json({ error: 'Roblox thumbnail fetch failed' });
+  }
+});
+
 // ── FarmSync proxy ────────────────────────────────────────────────────────────
 app.all('/api/farmsync/*', async (req: express.Request, res: express.Response) => {
   const subPath = (req.params as any)[0] as string;
