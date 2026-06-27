@@ -1373,7 +1373,7 @@ app.get('/api/roblox-thumb', async (req, res) => {
 
   try {
     const r = await axios.get('https://thumbnails.roblox.com/v1/assets', {
-      params: { assetIds: id, returnPolicy: 'PlaceHolder', size: '150x150', format: 'Png', isCircular: false },
+      params: { assetIds: id, size: '150x150', format: 'Png', isCircular: false },
       headers: { Accept: 'application/json' },
       timeout: 8000,
     });

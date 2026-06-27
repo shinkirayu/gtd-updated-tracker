@@ -196,6 +196,27 @@ task.spawn(function()
         local seeds       = math.floor(tonumber(data.Seeds)       or 0)
         local luckyBlocks = math.floor(tonumber(data.LuckyBlocks) or 0)
 
+        -- safe-copy boosts (strip functions/userdata, one level deep)
+        local boostsSafe = {}
+        if type(data.Boosts) == "table" then
+            for k, v in pairs(data.Boosts) do
+                local kt = type(k)
+                if kt ~= "string" and kt ~= "number" then continue end
+                if type(v) == "table" then
+                    local inner = {}
+                    for k2, v2 in pairs(v) do
+                        local t2 = type(v2)
+                        if t2 == "number" or t2 == "string" or t2 == "boolean" then
+                            inner[tostring(k2)] = v2
+                        end
+                    end
+                    boostsSafe[tostring(k)] = inner
+                elseif type(v) == "number" or type(v) == "string" or type(v) == "boolean" then
+                    boostsSafe[tostring(k)] = v
+                end
+            end
+        end
+
         local inLobby  = isLobby()
         local stateStr = inLobby and "lobby" or "farming"
 
@@ -203,7 +224,8 @@ task.spawn(function()
         for _, item in ipairs(units) do
             invKey = invKey .. item.id .. "=" .. item.count .. ";"
         end
-        local payloadKey = stateStr .. "|" .. seeds .. "|" .. luckyBlocks .. "|" .. invKey
+        local boostKey = HttpService:JSONEncode(boostsSafe)
+        local payloadKey = stateStr .. "|" .. seeds .. "|" .. luckyBlocks .. "|" .. invKey .. "|" .. boostKey
 
         local now = os.time()
         local forceSync = (now - lastForcedSync) >= FORCE_INTERVAL
@@ -218,6 +240,7 @@ task.spawn(function()
             lobby        = stateStr,
             status       = "online",
             inventory    = allItems,
+            boosts       = boostsSafe,
             updated_at   = getISO8601(),
         }) .. "]"
 

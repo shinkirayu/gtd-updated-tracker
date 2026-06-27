@@ -100,7 +100,10 @@ export default function InventoryDrawer({ username, inventory, onClose }: Invent
       // New reporter.lua format: { id, name (display), image, count }
       // Legacy format:           { name (raw ID), displayName, quantity }
       const rawId = item.id || item.name;
-      const resolvedDisplay = item.id ? item.name : item.displayName;
+      const potentialDisplay = item.id ? item.name : item.displayName;
+      // When NameCache fell back to the raw key (e.g. "unit_tomato_plant"), skip it as display name
+      const resolvedDisplay =
+        potentialDisplay && /^(unit_|dp_|gp_)/i.test(potentialDisplay) ? undefined : potentialDisplay;
       const quantity = item.count ?? item.quantity ?? 0;
 
       const formattedItem = {
@@ -264,11 +267,6 @@ export default function InventoryDrawer({ username, inventory, onClose }: Invent
                         <span className="text-[10px] font-bold text-zinc-150 block truncate leading-tight px-0.5 group-hover:text-white">
                           {item.name}
                         </span>
-                        {item.rawName && item.rawName !== item.name && (
-                          <span className="text-[8px] font-mono text-zinc-600 block truncate px-0.5 mt-0.5">
-                            {item.rawName}
-                          </span>
-                        )}
                         <span className="text-[9px] font-mono font-black text-indigo-400 block mt-0.5">
                           x{item.quantity.toLocaleString()}
                         </span>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -165,6 +165,7 @@ export default function App() {
   });
   const [schemaTablesMissing, setSchemaTablesMissing] = useState(false);
   const [schemaTablesStatusText, setSchemaTablesStatusText] = useState<string | null>(null);
+  const baselineInitialized = useRef(false);
 
   // Custom Supabase inputs for database replication across PCs
   const [supabaseSetupUrl, setSupabaseSetupUrl] = useState(() => {
@@ -1228,12 +1229,6 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<{ show: boolean; x: number; y: number } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Credentials mapping state & modal state
-  const [credentialsMap, setCredentialsMap] = useState<Record<string, { pass: string; cookie: string }>>({});
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importText, setImportText] = useState('');
-  const [showConfirmClear, setShowConfirmClear] = useState(false);
-
   // -- NEW ACCOUNTS TAB MANAGEMENT STATES --
   const [importedAccounts, setImportedAccounts] = useState<ImportedAccount[]>([]);
   const [statusCategories, setStatusCategories] = useState<string[]>(['unused', 'banned']);
@@ -1258,6 +1253,8 @@ export default function App() {
   const [newCustomCategoryInput, setNewCustomCategoryInput] = useState('');
   const [selectedAccountUsernames, setSelectedAccountUsernames] = useState<string[]>([]);
   const [lastClickedAccountUser, setLastClickedAccountUser] = useState<string | null>(null);
+  const [dashboardCtxMenu, setDashboardCtxMenu] = useState<{ x: number; y: number; username: string } | null>(null);
+  const [credCtxMenu, setCredCtxMenu] = useState<{ x: number; y: number; username: string; pass?: string; cookie?: string } | null>(null);
 
   const [accountStatusFilter, setAccountStatusFilter] = useState<string>('all');
   const [accountPcFilter, setAccountPcFilter] = useState<string>('all');
@@ -1327,22 +1324,6 @@ export default function App() {
       if (savedAccs) {
         setImportedAccounts(JSON.parse(savedAccs));
       } else {
-        // Fallback: migrate from the old credentialsMap if present
-        const savedCreds = localStorage.getItem('accounts_credentials_map');
-        if (savedCreds) {
-          const creds = JSON.parse(savedCreds);
-          const legacyList: ImportedAccount[] = Object.entries(creds).map(([user, data]: [string, any]) => ({
-            username: user,
-            pass: data.pass || '',
-            cookie: data.cookie || '',
-            pcCategoryByClient: 'PC-UNKNOWN',
-            game: 'None',
-            status: 'unused',
-            createdAt: new Date().toISOString()
-          }));
-          setImportedAccounts(legacyList);
-          localStorage.setItem('accounts_imported_collection', JSON.stringify(legacyList));
-        }
       }
     } catch (e) {
       console.error('Failed to parse imported accounts', e);
@@ -1415,17 +1396,6 @@ export default function App() {
     setImportedAccounts(updated);
     try {
       localStorage.setItem('accounts_imported_collection', JSON.stringify(updated));
-      
-      // Keep credentialsMap automatically synchronized!
-      const newCredsMap: Record<string, { pass: string; cookie: string }> = {};
-      updated.forEach(acc => {
-        newCredsMap[acc.username.toLowerCase()] = {
-          pass: acc.pass || '',
-          cookie: acc.cookie || ''
-        };
-      });
-      setCredentialsMap(newCredsMap);
-      localStorage.setItem('accounts_credentials_map', JSON.stringify(newCredsMap));
     } catch (e) {
       console.error('Failed to save imported accounts', e);
     }
@@ -1495,81 +1465,6 @@ export default function App() {
     });
   }, [importedAccounts, accountStatusFilter, accountPcFilter, accountGameFilter, accountSearch]);
 
-  // Keep old credentialsMap sync on load also for safety
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('accounts_credentials_map');
-      if (saved) {
-        setCredentialsMap(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.error('Failed to load credentials', e);
-    }
-  }, []);
-
-  // Utility to format accounts credentials mapping on request
-  const getFormattedCredentials = (username: string): string => {
-    if (!username) return '';
-    const cred = credentialsMap[username.toLowerCase()];
-    if (cred) {
-      return `${username}:${cred.pass}:${cred.cookie}`;
-    }
-    return `${username}::`;
-  };
-
-  // Analytics of matched credentials with current database trackers
-  const matchedAccountsCount = useMemo(() => {
-    return accounts.filter(acc => acc.username && credentialsMap[acc.username.toLowerCase()]).length;
-  }, [accounts, credentialsMap]);
-
-  // Save imported user:pass:cookie entries
-  const handleSaveCredentials = () => {
-    if (!importText.trim()) return;
-    const lines = importText.split('\n');
-    const newMap = { ...credentialsMap };
-    let importCount = 0;
-
-    lines.forEach((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-
-      const parts = trimmed.split(':');
-      if (parts.length >= 1) {
-        const user = parts[0].trim();
-        if (!user) return;
-        
-        const pass = parts[1] ? parts[1].trim() : '';
-        const cookie = parts.slice(2).join(':').trim();
-
-        newMap[user.toLowerCase()] = { pass, cookie };
-        importCount++;
-      }
-    });
-
-    setCredentialsMap(newMap);
-    try {
-      localStorage.setItem('accounts_credentials_map', JSON.stringify(newMap));
-    } catch (e) {
-      console.error('Failed to save to local storage', e);
-    }
-
-    setToastMessage(`Loaded ${importCount} account credential rows successfully!`);
-    setTimeout(() => setToastMessage(null), 3000);
-    setIsImportModalOpen(false);
-    setImportText('');
-  };
-
-  const handleClearCredentials = () => {
-    setCredentialsMap({});
-    try {
-      localStorage.removeItem('accounts_credentials_map');
-    } catch (e) {
-      console.error('Failed to clear credentials', e);
-    }
-    setToastMessage('Cleared all stored credentials mappings.');
-    setTimeout(() => setToastMessage(null), 2500);
-    setShowConfirmClear(false);
-  };
 
   // Clear holder selection when storage item changes or when tab changes
   useEffect(() => {
@@ -1697,14 +1592,6 @@ export default function App() {
         });
         try { localStorage.setItem('accounts_imported_collection', JSON.stringify(merged)); } catch {}
 
-        // Rebuild credentials map
-        const newCredsMap: Record<string, { pass: string; cookie: string }> = {};
-        merged.forEach(acc => {
-          newCredsMap[acc.username.toLowerCase()] = { pass: acc.pass || '', cookie: acc.cookie || '' };
-        });
-        setCredentialsMap(newCredsMap);
-        try { localStorage.setItem('accounts_credentials_map', JSON.stringify(newCredsMap)); } catch {}
-
         return merged;
       });
 
@@ -1773,17 +1660,6 @@ export default function App() {
         }));
         setImportedAccounts(formattedImported);
         localStorage.setItem('accounts_imported_collection', JSON.stringify(formattedImported));
-        
-        // Also sync credentials map
-        const newCredsMap: Record<string, { pass: string; cookie: string }> = {};
-        formattedImported.forEach((acc: any) => {
-          newCredsMap[acc.username.toLowerCase()] = {
-            pass: acc.pass || '',
-            cookie: acc.cookie || ''
-          };
-        });
-        setCredentialsMap(newCredsMap);
-        localStorage.setItem('accounts_credentials_map', JSON.stringify(newCredsMap));
       } else if (impError) {
         if (impError.code === '42P01' || impError.message?.includes('relation "gtd_imported_accounts" does not exist')) {
           tablesMissing = true;
@@ -1822,13 +1698,6 @@ export default function App() {
       pcCategoryByClient: d.pc_category_by_client, game: d.game,
       status: d.status, createdAt: d.created_at
     });
-    const syncCredentials = (list: any[]) => {
-      const map: Record<string, { pass: string; cookie: string }> = {};
-      list.forEach((a: any) => { map[a.username.toLowerCase()] = { pass: a.pass || '', cookie: a.cookie || '' }; });
-      setCredentialsMap(map);
-      localStorage.setItem('accounts_credentials_map', JSON.stringify(map));
-    };
-
     const channel = supabase
       .channel('schema-db-realtime-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, ({ eventType, new: n, old: o }: any) => {
@@ -1858,7 +1727,6 @@ export default function App() {
           else if (eventType === 'DELETE') updated = prev.filter(a => a.username !== o.username);
           else return prev;
           localStorage.setItem('accounts_imported_collection', JSON.stringify(updated));
-          syncCredentials(updated);
           return updated;
         });
       })
@@ -1957,6 +1825,8 @@ export default function App() {
     const uniquePcs = new Set<string>();
 
     accounts.forEach((acc) => {
+      if (acc.username === '__UI_PRESENCE_HEARTBEAT__') return;
+
       const local = importedAccounts.find(
         (ia) => ia.username.toLowerCase() === acc.username.toLowerCase()
       );
@@ -1970,21 +1840,39 @@ export default function App() {
       totalSeeds += Number(acc.seeds || 0);
     });
 
+    const realAccounts = accounts.filter(a => a.username !== '__UI_PRESENCE_HEARTBEAT__');
     return {
-      totalAccounts: accounts.length,
+      totalAccounts: realAccounts.length,
       totalPcs: uniquePcs.size,
       onlineCount,
-      offlineCount: accounts.length - onlineCount,
+      offlineCount: realAccounts.length - onlineCount,
       totalSeeds,
     };
   }, [accounts, importedAccounts]);
 
-  // Noon-reset seeds baseline: per-account snapshot taken at the start of each noon period
+  // Seeds baseline — initializes once per session, then only merges new accounts
   useEffect(() => {
-    if (accounts.length === 0) return;
+    const realAccs = accounts.filter(a => a.username !== '__UI_PRESENCE_HEARTBEAT__');
+    if (realAccs.length === 0) return;
 
-    const now = new Date();
-    const lastMidnight = new Date(now);
+    // After the first initialization, only merge accounts that weren't tracked yet
+    if (baselineInitialized.current) {
+      setSeedsNoonBaseline(prev => {
+        let changed = false;
+        const next = { ...prev };
+        realAccs.forEach(acc => {
+          if (!(acc.username in next)) {
+            next[acc.username] = Number(acc.seeds || 0);
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+      return;
+    }
+
+    // First init: restore today's snapshot from localStorage, else snapshot current seeds
+    const lastMidnight = new Date();
     lastMidnight.setHours(0, 0, 0, 0);
 
     try {
@@ -1992,46 +1880,43 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (typeof parsed.timestamp === 'number' && parsed.timestamp >= lastMidnight.getTime()) {
-          // Snapshot is from the current noon period — merge in any new accounts
-          const updated = { ...parsed.accounts } as Record<string, number>;
-          let added = false;
-          accounts.forEach((acc) => {
-            if (!(acc.username in updated)) {
-              updated[acc.username] = Number(acc.seeds || 0);
-              added = true;
+          const restored = { ...parsed.accounts } as Record<string, number>;
+          realAccs.forEach(acc => {
+            if (!(acc.username in restored)) {
+              restored[acc.username] = Number(acc.seeds || 0);
             }
           });
-          if (added) {
-            const newSnapshot = { accounts: updated, timestamp: parsed.timestamp };
-            localStorage.setItem('gtd_seeds_noon_snapshot', JSON.stringify(newSnapshot));
-          }
-          setSeedsNoonBaseline(updated);
+          localStorage.setItem('gtd_seeds_noon_snapshot', JSON.stringify({ accounts: restored, timestamp: parsed.timestamp }));
+          setSeedsNoonBaseline(restored);
           setSeedsSnapshotTimestamp(parsed.timestamp);
+          baselineInitialized.current = true;
           return;
         }
       }
-      // No snapshot or snapshot is from a previous period — reset baseline
-      const accountsMap: Record<string, number> = {};
-      accounts.forEach((acc) => { accountsMap[acc.username] = Number(acc.seeds || 0); });
-      const ts = Date.now();
-      const newSnapshot = { accounts: accountsMap, timestamp: ts };
-      localStorage.setItem('gtd_seeds_noon_snapshot', JSON.stringify(newSnapshot));
-      setSeedsNoonBaseline(accountsMap);
-      setSeedsSnapshotTimestamp(ts);
     } catch {}
+
+    // No valid snapshot — use current seeds as baseline
+    const baseline: Record<string, number> = {};
+    realAccs.forEach(acc => { baseline[acc.username] = Number(acc.seeds || 0); });
+    const ts = Date.now();
+    try { localStorage.setItem('gtd_seeds_noon_snapshot', JSON.stringify({ accounts: baseline, timestamp: ts })); } catch {}
+    setSeedsNoonBaseline(baseline);
+    setSeedsSnapshotTimestamp(ts);
+    baselineInitialized.current = true;
   }, [accounts]);
 
   // Object with all aggregated items across accounts with custom rarity-weight calculation
   const aggregateStorage = useMemo(() => {
-    const items: { 
-      [itemName: string]: { 
+    const items: {
+      [itemName: string]: {
         name: string;
         rawName?: string;
+        image?: string;
         rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
         icon?: string;
         accounts: { username: string; pc: string; quantity: number; updated_at: string }[];
         totalQuantity: number;
-      } 
+      }
     } = {};
 
     accounts.forEach((acc) => {
@@ -2041,7 +1926,9 @@ export default function App() {
           // New format: { id (raw key), name (display), image, count }
           // Old format: { name (raw key), displayName, quantity }
           const rawId = item.id || item.name;
-          const resolvedDisplay = item.id ? item.name : item.displayName;
+          const potentialDisplay = item.id ? item.name : item.displayName;
+          const resolvedDisplay =
+            potentialDisplay && /^(unit_|dp_|gp_)/i.test(potentialDisplay) ? undefined : potentialDisplay;
           const itemQty = Number(item.count ?? item.quantity) || 0;
           const nameTrimmed = formatItemName(rawId, resolvedDisplay);
           
@@ -2097,6 +1984,7 @@ export default function App() {
             items[nameTrimmed] = {
               name: nameTrimmed,
               rawName: rawId,
+              image: item.image,
               rarity,
               icon,
               accounts: [],
@@ -2124,6 +2012,7 @@ export default function App() {
     const list = Object.values(aggregateStorage) as {
       name: string;
       rawName?: string;
+      image?: string;
       rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
       icon?: string;
       accounts: { username: string; pc: string; quantity: number; updated_at: string }[];
@@ -2312,34 +2201,38 @@ export default function App() {
   const handleCopySelectedUsernames = () => {
     if (!selectedStorageItem || selectedHolderIndexes.length === 0) return;
     const itemsList = selectedHolderIndexes
-      .map(i => {
-        const username = selectedStorageItem.accounts[i]?.username;
-        return username ? getFormattedCredentials(username) : '';
-      })
-      .filter(Boolean);
+      .map(i => selectedStorageItem.accounts[i]?.username)
+      .filter(Boolean) as string[];
 
     if (itemsList.length > 0) {
       navigator.clipboard.writeText(itemsList.join('\n'));
-      setToastMessage(`Copied ${itemsList.length} account${itemsList.length > 1 ? 's' : ''} in user:pass:cookie format!`);
+      setToastMessage(`Copied ${itemsList.length} username${itemsList.length > 1 ? 's' : ''}!`);
       setTimeout(() => setToastMessage(null), 2500);
     }
   };
 
   const handleCopyAllUsernames = () => {
     if (!selectedStorageItem) return;
-    const itemsList = selectedStorageItem.accounts
-      .map(a => getFormattedCredentials(a.username))
-      .filter(Boolean);
+    const itemsList = selectedStorageItem.accounts.map(a => a.username).filter(Boolean);
 
     if (itemsList.length > 0) {
       navigator.clipboard.writeText(itemsList.join('\n'));
-      setToastMessage(`Copied all ${itemsList.length} accounts in user:pass:cookie format!`);
+      setToastMessage(`Copied all ${itemsList.length} usernames!`);
       setTimeout(() => setToastMessage(null), 2500);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#030304] text-zinc-100 font-sans selection:bg-indigo-500/30 selection:text-white pb-20 relative overflow-x-hidden">
+    <div
+      className="min-h-screen bg-[#030304] text-zinc-100 font-sans selection:bg-indigo-500/30 selection:text-white pb-20 relative overflow-x-hidden"
+      onClick={() => {
+        setCredCtxMenu(null);
+        if (activeTab === 'dashboard') {
+          setDashboardCtxMenu(null);
+          setSelectedAccountUsernames([]);
+        }
+      }}
+    >
       {/* Ambient background glass effects */}
       <div className="absolute top-[-5%] left-[-10%] w-[550px] h-[550px] bg-indigo-600/10 rounded-full blur-[130px] pointer-events-none z-0" />
       <div className="absolute bottom-[20%] right-[-10%] w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[130px] pointer-events-none z-0" />
@@ -2394,25 +2287,6 @@ export default function App() {
                 </button>
               )}
             </div>
-
-            {/* Bulk Credentials Importer Toggle */}
-            <button
-              onClick={() => {
-                setIsImportModalOpen(true);
-                setImportText('');
-              }}
-              className="px-4 py-2.5 rounded-xl border border-zinc-850 bg-zinc-900/40 text-zinc-300 hover:text-white hover:border-zinc-750 transition duration-150 flex items-center gap-2 text-xs font-bold cursor-pointer active:scale-95 shadow-md h-10 shrink-0"
-              title="Import user:pass:cookie in bulk"
-              id="btn-open-credentials-import"
-            >
-              <span className="text-amber-400 text-sm">🔑</span>
-              <span>Credentials</span>
-              {Object.keys(credentialsMap).length > 0 && (
-                <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-[9px] px-1.5 py-0.5 rounded font-bold">
-                  {Object.keys(credentialsMap).length} loaded
-                </span>
-              )}
-            </button>
 
             {/* Manual Stream Refresh Button */}
             <button
@@ -2551,9 +2425,31 @@ export default function App() {
                   <div className="min-w-0">
                     <span className="text-[9px] text-emerald-700 uppercase tracking-widest font-mono font-semibold block">Seeds Today</span>
                     <span className="block text-xl font-bold font-display text-emerald-400 mt-1">
-                      +{Math.max(0, statistics.totalSeeds - Object.values(seedsNoonBaseline).reduce((s, v) => s + v, 0)).toLocaleString()}
+                      +{accounts
+                          .filter(a => a.username !== '__UI_PRESENCE_HEARTBEAT__')
+                          .reduce((sum, acc) => {
+                            const base = seedsNoonBaseline[acc.username] ?? Number(acc.seeds || 0);
+                            return sum + Math.max(0, Number(acc.seeds || 0) - base);
+                          }, 0)
+                          .toLocaleString()}
                     </span>
-                    <span className="text-[9px] text-zinc-600 font-mono block mt-0.5">Resets 12:00 AM</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const accountsMap: Record<string, number> = {};
+                        accounts
+                          .filter(a => a.username !== '__UI_PRESENCE_HEARTBEAT__')
+                          .forEach((acc) => { accountsMap[acc.username] = Number(acc.seeds || 0); });
+                        const ts = Date.now();
+                        localStorage.setItem('gtd_seeds_noon_snapshot', JSON.stringify({ accounts: accountsMap, timestamp: ts }));
+                        setSeedsNoonBaseline(accountsMap);
+                        setSeedsSnapshotTimestamp(ts);
+                      }}
+                      className="text-[9px] text-zinc-600 hover:text-emerald-400 font-mono block mt-0.5 cursor-pointer transition text-left"
+                      title="Reset +Today counter to current seeds"
+                    >
+                      Reset +Today
+                    </button>
                   </div>
                   <span className="text-lg shrink-0">🌱</span>
                 </div>
@@ -2567,6 +2463,70 @@ export default function App() {
         {/* Conditionally Render Active Tab Content */}
         {activeTab === 'dashboard' ? (
           <div>
+            {/* Right-click context menu */}
+            {dashboardCtxMenu && (
+              <div
+                className="fixed z-50 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1 min-w-[160px] text-xs"
+                style={{ top: dashboardCtxMenu.y, left: dashboardCtxMenu.x }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="px-3 py-1.5 text-zinc-500 font-mono text-[10px] border-b border-zinc-800 truncate">
+                  {selectedAccountUsernames.length > 1
+                    ? `${selectedAccountUsernames.length} selected`
+                    : dashboardCtxMenu.username}
+                </div>
+                <button
+                  className="w-full text-left px-3 py-2 text-rose-400 hover:bg-rose-500/10 transition font-semibold flex items-center gap-2"
+                  onClick={async () => {
+                    const toDelete = selectedAccountUsernames.length > 0
+                      ? selectedAccountUsernames
+                      : [dashboardCtxMenu.username];
+                    await supabase.from('accounts').delete().in('username', toDelete);
+                    setToastMessage(`Deleted ${toDelete.length} account${toDelete.length > 1 ? 's' : ''}.`);
+                    setTimeout(() => setToastMessage(null), 2500);
+                    setSelectedAccountUsernames([]);
+                    setDashboardCtxMenu(null);
+                    loadData();
+                  }}
+                >
+                  <span>🗑️</span> Delete {selectedAccountUsernames.length > 1 ? `${selectedAccountUsernames.length} accounts` : 'account'}
+                </button>
+                <button
+                  className="w-full text-left px-3 py-2 text-zinc-400 hover:bg-zinc-800 transition flex items-center gap-2"
+                  onClick={() => { setSelectedAccountUsernames([]); setDashboardCtxMenu(null); }}
+                >
+                  <span>✕</span> Clear selection
+                </button>
+              </div>
+            )}
+
+            {/* Selection bar */}
+            {selectedAccountUsernames.length > 0 && (
+              <div className="flex items-center gap-3 mb-4 px-1">
+                <span className="text-xs font-mono font-bold text-indigo-400">
+                  {selectedAccountUsernames.length} selected
+                </span>
+                <button
+                  className="text-[11px] text-rose-400 hover:text-rose-300 font-semibold transition"
+                  onClick={async () => {
+                    await supabase.from('accounts').delete().in('username', selectedAccountUsernames);
+                    setToastMessage(`Deleted ${selectedAccountUsernames.length} account${selectedAccountUsernames.length > 1 ? 's' : ''}.`);
+                    setTimeout(() => setToastMessage(null), 2500);
+                    setSelectedAccountUsernames([]);
+                    loadData();
+                  }}
+                >
+                  🗑️ Delete selected
+                </button>
+                <button
+                  className="text-[11px] text-zinc-500 hover:text-zinc-300 transition"
+                  onClick={() => setSelectedAccountUsernames([])}
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
             {isFirstLoad ? (
               <div className="space-y-6">
                 {[1, 2, 3].map((i) => (
@@ -2575,47 +2535,6 @@ export default function App() {
               </div>
             ) : (
               <>
-                {/* GAME TRACKING VIEW PROFILE BAR */}
-                <div className="bg-zinc-900/25 border border-zinc-850/60 rounded-3xl p-5 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 backdrop-blur-md">
-                  <div className="flex flex-col gap-1">
-                    <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-widest font-mono flex items-center gap-2">
-                      <span className="text-base">🎯</span> Game Tracking Profile
-                    </h3>
-                    <p className="text-[11px] text-zinc-400 font-medium">
-                      {selectedGameFilter === 'all' 
-                        ? 'Showing all accounts under default tracker template view.'
-                        : `Showing "${selectedGameFilter}" active accounts with customized dynamic table tracking.`}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] text-zinc-550 uppercase font-mono font-bold mr-1">View Template:</span>
-                    <button
-                      onClick={() => setSelectedGameFilter('all')}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition cursor-pointer ${
-                        selectedGameFilter === 'all'
-                          ? 'bg-zinc-850 border-zinc-750 text-white'
-                          : 'bg-zinc-900/40 text-zinc-500 hover:text-zinc-350 border-transparent hover:bg-zinc-900'
-                      }`}
-                    >
-                      All Games
-                    </button>
-                    {games.map(game => (
-                      <button
-                        key={game.name}
-                        onClick={() => setSelectedGameFilter(game.name)}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition cursor-pointer flex items-center gap-1.5 ${
-                          selectedGameFilter === game.name
-                            ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.05)]'
-                            : 'bg-zinc-900/40 text-zinc-500 hover:text-zinc-350 border-transparent hover:bg-zinc-900'
-                        }`}
-                      >
-                        <span className="text-xs">🎮</span>
-                        <span>{game.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
 
                 {Object.keys(pcGroups).length > 0 ? (
                   <div className="flex flex-col gap-6">
@@ -2677,10 +2596,10 @@ export default function App() {
                             <thead>
                               <tr className="border-b border-zinc-800/60 text-[10px] text-zinc-500 uppercase tracking-widest font-mono">
                                 <th className="py-2.5 px-3 font-semibold text-left">Account</th>
-                                {visibleColumns.game && <th className="py-2.5 px-3 font-semibold text-center">Game</th>}
                                 {visibleColumns.map && <th className="py-2.5 px-3 font-semibold text-center">Map</th>}
                                 {visibleColumns.seeds && <th className="py-2.5 px-3 font-semibold text-center">Seeds</th>}
                                 {visibleColumns.seeds && <th className="py-2.5 px-3 font-semibold text-center text-emerald-600">+Today</th>}
+                                {visibleColumns.seeds && <th className="py-2.5 px-3 font-semibold text-center text-amber-500">Lucky</th>}
                                 {visibleColumns.storage && <th className="py-2.5 px-3 font-semibold text-center">Storage</th>}
                                 {visibleColumns.lobby && <th className="py-2.5 px-3 font-semibold text-center">Lobby</th>}
                                 <th className="py-2.5 px-3 font-semibold text-center">Key Items</th>
@@ -2695,16 +2614,59 @@ export default function App() {
                                 const snapshotAge = (Date.now() - seedsSnapshotTimestamp) / 1000;
                                 const isNoSeeds = isOnline && seedsGained <= 0 && snapshotAge > 1200;
 
+                                const isDashSelected = selectedAccountUsernames.includes(acc.username);
                                 return (
                                   <tr
                                     key={acc.id}
-                                    className={`group hover:bg-zinc-900/40 transition-colors duration-100 ${
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const allUsernames = filteredAccounts.map(a => a.username);
+                                      const currentIdx = allUsernames.indexOf(acc.username);
+                                      if (e.shiftKey && lastClickedAccountUser) {
+                                        const lastIdx = allUsernames.indexOf(lastClickedAccountUser);
+                                        const from = Math.min(currentIdx, lastIdx);
+                                        const to = Math.max(currentIdx, lastIdx);
+                                        const range = allUsernames.slice(from, to + 1);
+                                        setSelectedAccountUsernames(prev => [...new Set([...prev, ...range])]);
+                                      } else if (e.ctrlKey || e.metaKey) {
+                                        setSelectedAccountUsernames(prev =>
+                                          isDashSelected ? prev.filter(u => u !== acc.username) : [...prev, acc.username]
+                                        );
+                                        setLastClickedAccountUser(acc.username);
+                                      } else {
+                                        setSelectedAccountUsernames(prev =>
+                                          isDashSelected ? prev.filter(u => u !== acc.username) : [...prev, acc.username]
+                                        );
+                                        setLastClickedAccountUser(acc.username);
+                                      }
+                                    }}
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      if (!isDashSelected) {
+                                        setSelectedAccountUsernames(prev => [...prev, acc.username]);
+                                        setLastClickedAccountUser(acc.username);
+                                      }
+                                      setDashboardCtxMenu({ x: e.clientX, y: e.clientY, username: acc.username });
+                                    }}
+                                    className={`group hover:bg-zinc-900/40 transition-colors duration-100 cursor-pointer select-none ${
                                       !isOnline ? 'opacity-50 saturate-50' : ''
-                                    }`}
+                                    } ${isDashSelected ? 'bg-indigo-950/30 ring-1 ring-inset ring-indigo-500/20' : ''}`}
                                   >
-                                    {/* Account Info Column */}
+                                    {/* Circular select indicator + Account Info Column */}
                                     <td className="py-3 px-3">
                                       <div className="flex items-center gap-2.5 font-display">
+                                        {/* Circle indicator: only visible when selected or row hovered */}
+                                        <div className={`w-4 h-4 rounded-full shrink-0 border-2 flex items-center justify-center transition-all duration-150 ${
+                                          isDashSelected
+                                            ? 'bg-indigo-500 border-indigo-500 opacity-100'
+                                            : 'border-zinc-600 bg-transparent opacity-0 group-hover:opacity-60'
+                                        }`}>
+                                          {isDashSelected && (
+                                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10">
+                                              <path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                            </svg>
+                                          )}
+                                        </div>
                                         {/* Live status ping indicator */}
                                         <span className="relative flex h-2 w-2 shrink-0">
                                           {isOnline && (
@@ -2719,14 +2681,33 @@ export default function App() {
                                           <span className="text-xs font-bold text-zinc-150 block truncate group-hover:text-white transition">
                                             {acc.username}
                                           </span>
-                                          {credentialsMap[acc.username.toLowerCase()] && (
-                                            <span
-                                              className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1 rounded font-mono font-bold shrink-0 cursor-help"
-                                              title="Matched: user:pass:cookie imported"
-                                            >
-                                              🔑
-                                            </span>
-                                          )}
+                                          {(() => {
+                                            const b = acc.boosts;
+                                            if (!b || typeof b !== 'object') return null;
+                                            const keys = Object.keys(b).map(k => k.toLowerCase());
+                                            const hasSpeed = keys.some(k => k.includes('speed') || k.includes('gamespeed') || k.includes('fast'));
+                                            const hasSeed  = keys.some(k => k.includes('seed') || k.includes('seedmulti') || k.includes('plant'));
+                                            return (
+                                              <>
+                                                {hasSpeed && (
+                                                  <span
+                                                    className="inline-flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded border bg-amber-500/15 text-amber-300 border-amber-500/30 shrink-0 leading-none"
+                                                    title="3x Game Speed boost active"
+                                                  >
+                                                    ⚡ 3x
+                                                  </span>
+                                                )}
+                                                {hasSeed && (
+                                                  <span
+                                                    className="inline-flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded border bg-emerald-500/15 text-emerald-300 border-emerald-500/30 shrink-0 leading-none"
+                                                    title="2x Seed boost active"
+                                                  >
+                                                    🌱 2x
+                                                  </span>
+                                                )}
+                                              </>
+                                            );
+                                          })()}
                                           {isNoSeeds && (
                                             <span
                                               className="text-[9px] bg-rose-500/10 text-rose-400 border border-rose-500/25 px-1.5 py-0.5 rounded font-mono font-bold shrink-0"
@@ -2739,27 +2720,6 @@ export default function App() {
                                       </div>
                                     </td>
 
-                                    {/* Game Column */}
-                                    {visibleColumns.game && (
-                                      <td className="py-3 px-3 text-center">
-                                        {(() => {
-                                          const localMeta = importedAccounts.find(
-                                            (ia) => ia.username.toLowerCase() === acc.username.toLowerCase()
-                                          );
-                                          const gameName = localMeta?.game || 'None';
-                                          
-                                          return (
-                                            <span className={`inline-flex items-center px-2 py-0.5 text-[10px] rounded-full border font-mono font-bold uppercase ${
-                                              gameName !== 'None'
-                                                ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20'
-                                                : 'bg-zinc-900/40 text-zinc-500 border-zinc-850'
-                                            }`}>
-                                              🎮 {gameName}
-                                            </span>
-                                          );
-                                        })()}
-                                      </td>
-                                    )}
 
                                     {/* Map Column */}
                                     {visibleColumns.map && (
@@ -2799,11 +2759,6 @@ export default function App() {
                                         <span className="text-xs font-semibold">
                                           {Number(acc.seeds || 0).toLocaleString()} 🌱
                                         </span>
-                                        {acc.lucky_blocks != null && acc.lucky_blocks > 0 && (
-                                          <span className="block text-[10px] text-amber-400 font-bold mt-0.5">
-                                            {Number(acc.lucky_blocks).toLocaleString()} 🎲
-                                          </span>
-                                        )}
                                       </td>
                                     )}
 
@@ -2820,6 +2775,19 @@ export default function App() {
                                       </td>
                                     )}
 
+                                    {/* Lucky Blocks Column */}
+                                    {visibleColumns.seeds && (
+                                      <td className="py-3 px-3 text-center font-mono">
+                                        {acc.lucky_blocks != null && acc.lucky_blocks > 0 ? (
+                                          <span className="text-xs font-bold text-amber-400">
+                                            {Number(acc.lucky_blocks).toLocaleString()} 🎲
+                                          </span>
+                                        ) : (
+                                          <span className="text-xs text-zinc-700">—</span>
+                                        )}
+                                      </td>
+                                    )}
+
                                     {/* Storage Column with Popup activation button */}
                                     {visibleColumns.storage && (
                                       <td className="py-3 px-3 text-center">
@@ -2828,7 +2796,7 @@ export default function App() {
                                             const count = acc.inventory?.length || 0;
                                             return (
                                               <button
-                                                onClick={() => setSelectedInventoryUser({ username: acc.username, inventory: acc.inventory })}
+                                                onClick={(e) => { e.stopPropagation(); setSelectedInventoryUser({ username: acc.username, inventory: acc.inventory }); }}
                                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-mono text-xs font-bold transition duration-150 cursor-pointer ${
                                                   count > 0 
                                                     ? 'bg-indigo-600/10 border-indigo-500/35 hover:border-indigo-550 text-indigo-450 hover:bg-indigo-650/15 active:scale-95' 
@@ -2984,20 +2952,15 @@ export default function App() {
                     <span>📥</span> Import Accounts in List
                   </h4>
                   <p className="text-[10px] text-zinc-500 mt-0.5">
-                    Paste lines of accounts to import or update.
+                    Paste one username per line to import or update.
                   </p>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-zinc-550 font-mono">
-                    Detect formats: <code className="text-indigo-400 font-mono bg-zinc-900 px-1 py-0.5 rounded font-black">user:pass:cookie</code>, <code className="text-indigo-400 font-mono bg-zinc-900 px-1 py-0.5 rounded font-black">user:pass</code>, or <code className="text-indigo-400 font-mono bg-zinc-900 px-1 py-0.5 rounded font-black">username</code>
-                  </span>
                 </div>
               </div>
 
               <textarea
                 value={accountsImportText}
                 onChange={(e) => setAccountsImportText(e.target.value)}
-                placeholder="user1:pass1:cookieValueHere...&#10;user2:pass2:cookieValueHere...&#10;user3"
+                placeholder="user1&#10;user2&#10;user3"
                 rows={4}
                 className="w-full bg-zinc-900/50 border border-zinc-850 rounded-xl p-3.5 text-xs font-mono text-zinc-250 placeholder-zinc-650 focus:outline-none focus:ring-1 focus:ring-indigo-500 mb-4 resize-none"
               />
@@ -3053,38 +3016,27 @@ export default function App() {
                     const newList = [...importedAccounts];
 
                     lines.forEach(line => {
-                      const trimmed = line.trim();
-                      if (!trimmed) return;
-                      const parts = trimmed.split(':');
-                      if (parts.length >= 1) {
-                        const user = parts[0].trim();
-                        if (!user) return;
-                        const pass = parts[1] ? parts[1].trim() : '';
-                        const cookie = parts.slice(2).join(':').trim();
+                      const user = line.trim();
+                      if (!user) return;
 
-                        const existingIndex = newList.findIndex(a => a.username.toLowerCase() === user.toLowerCase());
-                        if (existingIndex !== -1) {
-                          newList[existingIndex] = {
-                            ...newList[existingIndex],
-                            pass: pass || newList[existingIndex].pass,
-                            cookie: cookie || newList[existingIndex].cookie,
-                            pcCategoryByClient: importAssignPc.trim() || newList[existingIndex].pcCategoryByClient || 'PC-UNKNOWN',
-                            game: importAssignGame.trim() || newList[existingIndex].game || 'None',
-                            status: importAssignStatus || newList[existingIndex].status || 'unused',
-                          };
-                        } else {
-                          newList.push({
-                            username: user,
-                            pass,
-                            cookie,
-                            pcCategoryByClient: importAssignPc.trim() || 'PC-UNKNOWN',
-                            game: importAssignGame.trim() || 'None',
-                            status: importAssignStatus || 'unused',
-                            createdAt: new Date().toISOString()
-                          });
-                        }
-                        importedCount++;
+                      const existingIndex = newList.findIndex(a => a.username.toLowerCase() === user.toLowerCase());
+                      if (existingIndex !== -1) {
+                        newList[existingIndex] = {
+                          ...newList[existingIndex],
+                          pcCategoryByClient: importAssignPc.trim() || newList[existingIndex].pcCategoryByClient || 'PC-UNKNOWN',
+                          game: importAssignGame.trim() || newList[existingIndex].game || 'None',
+                          status: importAssignStatus || newList[existingIndex].status || 'unused',
+                        };
+                      } else {
+                        newList.push({
+                          username: user,
+                          pcCategoryByClient: importAssignPc.trim() || 'PC-UNKNOWN',
+                          game: importAssignGame.trim() || 'None',
+                          status: importAssignStatus || 'unused',
+                          createdAt: new Date().toISOString()
+                        });
                       }
+                      importedCount++;
                     });
 
                     saveImportedAccounts(newList);
@@ -3269,23 +3221,6 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
-                  {/* Copy credentials */}
-                  <button
-                    onClick={() => {
-                      const list = importedAccounts
-                        .filter(a => selectedAccountUsernames.includes(a.username))
-                        .map(a => `${a.username}:${a.pass || ''}:${a.cookie || ''}`)
-                        .join('\n');
-                      navigator.clipboard.writeText(list);
-                      setToastMessage(`Copied ${selectedAccountUsernames.length} credentials (user:pass:cookie)!`);
-                      setTimeout(() => setToastMessage(null), 2500);
-                    }}
-                    className="px-3 py-1.5 text-xs bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded-lg font-bold border border-zinc-800 transition duration-155 active:scale-95 cursor-pointer flex items-center gap-1"
-                    title="Copy selected as user:pass:cookie list"
-                  >
-                    📋 Copy credentials
-                  </button>
-
                   <button
                     onClick={() => {
                       const list = selectedAccountUsernames.join('\n');
@@ -3454,6 +3389,11 @@ export default function App() {
                         return (
                           <tr
                             key={ia.username}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setCredCtxMenu({ x: e.clientX, y: e.clientY, username: ia.username, pass: ia.pass, cookie: ia.cookie });
+                            }}
                             onClick={(e) => {
                               const tag = (e.target as HTMLElement).tagName.toLowerCase();
                               if (tag === 'select' || tag === 'input' || tag === 'button' || tag === 'option') return;
@@ -3522,9 +3462,6 @@ export default function App() {
                                 <div>
                                   <span className="text-xs font-bold text-zinc-150 block truncate group-hover:text-white transition">
                                     {ia.username}
-                                  </span>
-                                  <span className="text-[9px] text-zinc-550 block font-mono">
-                                    {ia.pass ? `pass: ${ia.pass.slice(0, 4)}...` : 'no password'} • {ia.cookie ? 'cookie set' : 'no cookie'}
                                   </span>
                                 </div>
                               </div>
@@ -3705,14 +3642,14 @@ export default function App() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    navigator.clipboard.writeText(`${ia.username}:${ia.pass || ''}:${ia.cookie || ''}`);
+                                    navigator.clipboard.writeText(ia.username);
                                     setToastMessage(`Copied: ${ia.username}`);
                                     setTimeout(() => setToastMessage(null), 2500);
                                   }}
                                   className="p-1.5 bg-zinc-90 w-8 h-8 rounded-lg border border-zinc-850 hover:border-zinc-700 text-zinc-400 hover:text-white transition cursor-pointer active:scale-95 flex items-center justify-center shrink-0"
-                                  title="Copy in user:pass:cookie format"
+                                  title="Copy username"
                                 >
-                                  🔑
+                                  📋
                                 </button>
                                 <button
                                   type="button"
@@ -3895,6 +3832,7 @@ export default function App() {
                                   <div className="my-auto flex flex-col items-center justify-center p-1 min-h-[44px] w-full">
                                     <AssetImage
                                       rawName={item.rawName}
+                                      image={item.image}
                                       fallbackEmoji={item.icon || '📦'}
                                       name={item.name}
                                       className="w-10 h-10 object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]"
@@ -3950,6 +3888,7 @@ export default function App() {
                                   <div className="my-auto flex flex-col items-center justify-center p-1 min-h-[44px] w-full">
                                     <AssetImage
                                       rawName={item.rawName}
+                                      image={item.image}
                                       fallbackEmoji={item.icon || '📦'}
                                       name={item.name}
                                       className="w-10 h-10 object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]"
@@ -4005,6 +3944,7 @@ export default function App() {
                                   <div className="my-auto flex flex-col items-center justify-center p-1 min-h-[44px] w-full">
                                     <AssetImage
                                       rawName={item.rawName}
+                                      image={item.image}
                                       fallbackEmoji={item.icon || '📦'}
                                       name={item.name}
                                       className="w-10 h-10 object-contain filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]"
@@ -4044,6 +3984,7 @@ export default function App() {
                           <div className="w-14 h-14 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-center text-2xl shrink-0 p-1">
                             <AssetImage
                               rawName={selectedStorageItem.rawName}
+                              image={selectedStorageItem.image}
                               fallbackEmoji={selectedStorageItem.icon || '📦'}
                               name={selectedStorageItem.name}
                               className="w-12 h-12 object-contain filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]"
@@ -4129,11 +4070,8 @@ export default function App() {
                                   e.preventDefault();
                                   e.stopPropagation();
                                   handleHolderClick(e, index);
-                                  setContextMenu({
-                                    show: true,
-                                    x: e.clientX,
-                                    y: e.clientY
-                                  });
+                                  const localIa = importedAccounts.find(a => a.username.toLowerCase() === holder.username.toLowerCase());
+                                  setCredCtxMenu({ x: e.clientX, y: e.clientY, username: holder.username, pass: localIa?.pass, cookie: localIa?.cookie });
                                 }}
                                 className={`flex flex-col md:flex-row md:items-center justify-between p-3.5 rounded-xl border transition select-none cursor-pointer text-left gap-3.5 ${
                                   isSelected 
@@ -4156,14 +4094,6 @@ export default function App() {
                                   <div className="min-w-0 text-left flex-1">
                                     <span className="text-xs font-bold text-zinc-150 flex items-center gap-1.5 truncate">
                                       <span>{holder.username}</span>
-                                      {selectedStorageSource === 'farm' && credentialsMap[holder.username.toLowerCase()] && (
-                                        <span 
-                                          className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1 rounded font-mono font-bold shrink-0 cursor-help"
-                                          title="Matched credentials loaded"
-                                        >
-                                          🔑
-                                        </span>
-                                      )}
                                     </span>
                                     <span className="text-[10px] text-zinc-400 font-mono block lowercase mt-0.5">
                                       {selectedStorageSource === 'farm' ? (
@@ -5360,142 +5290,42 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Bulk Credentials Importer Modal */}
+      {/* Credential right-click context menu */}
       <AnimatePresence>
-        {isImportModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => {
-                setIsImportModalOpen(false);
-                setShowConfirmClear(false);
-              }}
-              className="absolute inset-0 bg-black/75 backdrop-blur-sm"
-            />
-
-            {/* Modal Body */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.15 }}
-              className="relative w-full max-w-xl bg-zinc-950 border border-zinc-850/80 rounded-3xl p-6 shadow-2xl flex flex-col gap-4 z-10"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Close Button */}
+        {credCtxMenu && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.1 }}
+            className="fixed z-[60] bg-zinc-950/97 border border-zinc-800 rounded-2xl shadow-2xl p-1.5 min-w-[210px] backdrop-blur-md"
+            style={{ top: credCtxMenu.y, left: credCtxMenu.x }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-1.5 text-zinc-500 font-mono text-[10px] border-b border-zinc-800/60 truncate mb-1">
+              {credCtxMenu.username}
+            </div>
+            {[
+              { label: 'Copy username',       icon: '👤', value: () => credCtxMenu.username },
+              { label: 'Copy user:pass',      icon: '🔐', value: () => `${credCtxMenu.username}:${credCtxMenu.pass || ''}` },
+              { label: 'Copy user:pass:cookie', icon: '🍪', value: () => `${credCtxMenu.username}:${credCtxMenu.pass || ''}:${credCtxMenu.cookie || ''}` },
+              { label: 'Copy cookie',         icon: '🗝️', value: () => credCtxMenu.cookie || '' },
+            ].map(({ label, icon, value }) => (
               <button
+                key={label}
                 onClick={() => {
-                  setIsImportModalOpen(false);
-                  setShowConfirmClear(false);
+                  const text = value();
+                  navigator.clipboard.writeText(text);
+                  setToastMessage(`Copied ${label}!`);
+                  setTimeout(() => setToastMessage(null), 2000);
+                  setCredCtxMenu(null);
                 }}
-                className="absolute top-5 right-5 text-zinc-500 hover:text-white hover:bg-zinc-900 border border-transparent hover:border-zinc-800 p-1.5 rounded-xl transition duration-150 cursor-pointer active:scale-95"
-                title="Close modal"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-zinc-800 rounded-xl text-left transition cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <span>{icon}</span> {label}
               </button>
-
-              <div>
-                <h3 className="text-base font-bold font-display text-white flex items-center gap-2">
-                  <span className="text-amber-400">🔑</span> Bulk Import Account Credentials
-                </h3>
-                <p className="text-zinc-400 text-xs mt-1">
-                  Format: <code className="bg-zinc-900 px-1 py-0.5 rounded text-indigo-400 font-mono text-[11px] font-bold">username:password:cookie</code>. One account per line. Extra colons in cookies are parsed securely.
-                </p>
-              </div>
-
-              {/* Text Area */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono font-semibold">
-                  Paste Account Configuration List
-                </label>
-                <textarea
-                  value={importText}
-                  onChange={(e) => setImportText(e.target.value)}
-                  placeholder="user1:pass1:cookieValueHere...&#10;user2:pass2:cookieValueHere..."
-                  rows={8}
-                  className="w-full bg-zinc-900/60 border border-zinc-850/80 rounded-2xl p-4 text-xs font-mono text-zinc-200 placeholder-zinc-650 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition resize-none"
-                />
-              </div>
-
-              {/* Status and Actions Panel */}
-              <div className="flex flex-col gap-3.5 bg-zinc-900/20 border border-zinc-900 rounded-2xl p-4">
-                <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-                  <div>
-                    <span className="text-zinc-400 font-medium block">Matching Tracker Database:</span>
-                    <span className="text-[11px] text-zinc-305 font-mono mt-0.5 block">
-                      Matched <span className="text-amber-400 font-bold">{matchedAccountsCount}</span> of <span className="text-zinc-150 font-bold">{accounts.length}</span> tracker users
-                    </span>
-                  </div>
-                  
-                  <div className="text-right">
-                    <span className="text-zinc-500 block text-[10px] uppercase font-mono tracking-wider">Storage Memory</span>
-                    <span className="text-zinc-200 text-xs font-bold block mt-0.5">
-                      {Object.keys(credentialsMap).length} mapped records
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-zinc-900 pt-3.5 flex-wrap gap-3">
-                  {/* Clear Button / Confirm Clearance Row */}
-                  <div>
-                    {!showConfirmClear ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmClear(true)}
-                        disabled={Object.keys(credentialsMap).length === 0}
-                        className="px-3 py-1.5 text-xs text-rose-450 hover:text-rose-400 hover:bg-rose-950/20 border border-transparent hover:border-rose-950/30 rounded-xl transition cursor-pointer disabled:opacity-30 disabled:pointer-events-none font-bold"
-                      >
-                        🗑️ Clear Memory
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-rose-400 font-mono font-bold animate-pulse">Are you sure?</span>
-                        <button
-                          type="button"
-                          onClick={handleClearCredentials}
-                          className="px-2.5 py-1 text-[10px] bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold cursor-pointer transition"
-                        >
-                          Yes, Reset
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirmClear(false)}
-                          className="px-2.5 py-1 text-[10px] bg-zinc-900 hover:bg-zinc-850 text-zinc-400 rounded-lg font-bold cursor-pointer transition"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Cancel / Import Buttons */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsImportModalOpen(false);
-                        setShowConfirmClear(false);
-                      }}
-                      className="px-4 py-2 text-xs font-bold font-mono text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-850 hover:border-zinc-800 rounded-xl transition cursor-pointer active:scale-95"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSaveCredentials}
-                      disabled={!importText.trim()}
-                      className="px-4 py-2 text-xs font-bold font-mono text-black bg-amber-400 hover:bg-amber-300 disabled:opacity-40 disabled:pointer-events-none rounded-xl transition cursor-pointer active:scale-95 shadow-lg shadow-amber-400/10"
-                    >
-                      Save & Import
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </div>
+            ))}
+          </motion.div>
         )}
       </AnimatePresence>
 

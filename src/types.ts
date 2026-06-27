@@ -18,6 +18,7 @@ export interface AccountData {
   units: string | number;
   status?: string;
   lobby?: string;
+  boosts?: Record<string, unknown>;
   inventory: InventoryItem[] | null;
   updated_at: string;
 }
