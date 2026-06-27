@@ -2421,6 +2421,14 @@ export default function App() {
                   <Wifi className="text-emerald-500/60 w-4 h-4 shrink-0" />
                 </div>
 
+                <div className="bg-zinc-900/20 border border-zinc-900 rounded-2xl p-4 flex items-center justify-between">
+                  <div className="min-w-0">
+                    <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono font-semibold">Total Seeds</span>
+                    <span className="block text-xl font-bold font-display text-zinc-100 mt-1">{statistics.totalSeeds.toLocaleString()}</span>
+                  </div>
+                  <span className="text-base shrink-0">🌱</span>
+                </div>
+
                 <div className="bg-emerald-950/20 border border-emerald-900/40 rounded-2xl p-4 flex items-center justify-between">
                   <div className="min-w-0">
                     <span className="text-[9px] text-emerald-700 uppercase tracking-widest font-mono font-semibold block">Seeds Today</span>
